@@ -6096,6 +6096,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "soliton-demo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ark-bn254 0.5.0",
+ "halo2curves",
+ "solana-client",
+ "solana-commitment-config",
+ "solana-compute-budget-interface",
+ "solana-program 4.0.0",
+ "solana-sdk",
+ "solana-system-interface 3.2.0",
+ "soliton-pay",
+ "soliton-poseidon",
+ "soliton-sdk",
+]
+
+[[package]]
 name = "soliton-pay"
 version = "0.1.0"
 dependencies = [

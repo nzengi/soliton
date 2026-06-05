@@ -1,0 +1,27 @@
+[package]
+name        = "soliton-demo"
+version     = "0.1.0"
+description = "Stage 4 devnet demo: full Alice -> Bob private SOL transfer through the soliton-pool (shield x2, transfer, flush, unshield) on live Solana devnet, with on-chain note delivery + Bob scan."
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+
+[[bin]]
+name = "soliton-demo"
+path = "src/main.rs"
+
+[dependencies]
+solana-client                    = "3"
+solana-sdk                       = "3"
+solana-commitment-config         = "3"
+solana-compute-budget-interface  = "3"
+solana-system-interface          = { version = "3", features = ["bincode"] }
+solana-program                   = { workspace = true }
+
+soliton-sdk                      = { path = "../../crates/soliton-sdk" }
+soliton-poseidon                 = { path = "../../crates/soliton-poseidon" }
+soliton-pay                      = { path = "../../circuits/soliton-pay" }
+
+ark-bn254                        = { workspace = true, features = ["std"] }
+halo2curves                      = { workspace = true }
+anyhow                           = "1"

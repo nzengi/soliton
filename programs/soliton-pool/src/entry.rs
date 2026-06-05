@@ -3,14 +3,17 @@
 //! Account orderings (W = writable, S = signer, R = readonly):
 //!   initialize: [pool_state W, vault R]                         data: [0x00, bump]
 //!   shield:     [pool_state W, vault W, payer W S, system R]    data: [0x01, amount u64 LE, cm[32]]
-//!   transfer:   [pool_state W, blob R, nf1 W, nf2 W]            data: [0x02]
+//!   transfer:   [pool_state W, blob R, nf1 W, nf2 W, payer W S, system R]
+//!                                                               data: [0x02]
 //!   flush:      [pool_state W]                                  data: [0x03, max u8]
-//!   unshield:   [pool_state W, blob R, vault W, recipient W, nf1 W, nf2 W]
+//!   unshield:   [pool_state W, blob R, vault W, recipient W, nf1 W, nf2 W, payer W S, system R]
 //!                                                               data: [0x04, amount u64 LE]
 //!
 //! Nullifiers: each `nf` is a program-owned PDA `["nf", nf_le]`; data[0]==1 means
-//! spent. The program verifies the passed account's address == the derived PDA,
-//! then sets data[0]=1 (double-spend → already 1 → reject).
+//! spent. On the FIRST spend the PDA does not exist yet, so the program
+//! CPI-creates it (System CreateAccount, signed with the PDA seeds, funded by
+//! `payer`) with 1 byte of data, then sets data[0]=1. A second spend finds the
+//! PDA already program-owned with data[0]==1 → DOUBLE_SPEND reject.
 
 use pinocchio::{
     account::AccountView, address::Address, entrypoint, error::ProgramError, ProgramResult,
@@ -88,11 +91,16 @@ fn shield(accounts: &mut [AccountView], rest: &[u8]) -> ProgramResult {
 }
 
 #[inline(never)]
-fn transfer(program_id: &Address, accounts: &mut [AccountView], _rest: &[u8]) -> ProgramResult {
-    // accounts: [pool W, blob R, nf1 W, nf2 W]
-    if accounts.len() < 4 {
+fn transfer(program_id: &Address, accounts: &mut [AccountView], rest: &[u8]) -> ProgramResult {
+    // accounts: [pool W, blob R, nf1 W, nf2 W, payer W S, system R]
+    // data rest: [nf1_bump u8, nf2_bump u8] — the canonical PDA bumps, supplied by
+    // the client so the program needs ONE create_program_address per nullifier
+    // (a full 0..=255 search would cost ~hundreds of K CU and blow the budget).
+    if accounts.len() < 6 || rest.len() < 2 {
         return Err(ProgramError::Custom(verr::MALFORMED));
     }
+    let nf1_bump = rest[0];
+    let nf2_bump = rest[1];
     cu("[pool] transfer enter");
 
     // 1. Parse blob + verify proof.
@@ -126,9 +134,22 @@ fn transfer(program_id: &Address, accounts: &mut [AccountView], _rest: &[u8]) ->
         pool.queue_push(&cmout2_le).map_err(ProgramError::Custom)?;
     }
 
-    // 3. mark nullifiers spent (double-spend → reject).
-    spend_nullifier(program_id, &mut accounts[2], &nf1_le)?;
-    spend_nullifier(program_id, &mut accounts[3], &nf2_le)?;
+    // 3. mark nullifiers spent (create-if-absent; double-spend → reject).
+    //    accounts: [pool, blob, nf1(2), nf2(3), payer(4), system(5)]
+    {
+        let (left, right) = accounts.split_at_mut(4);
+        let nf1 = &mut left[2];
+        let payer = &right[0];
+        let system = &right[1];
+        spend_nullifier(program_id, nf1, payer, system, &nf1_le, nf1_bump)?;
+    }
+    {
+        let (left, right) = accounts.split_at_mut(4);
+        let nf2 = &mut left[3];
+        let payer = &right[0];
+        let system = &right[1];
+        spend_nullifier(program_id, nf2, payer, system, &nf2_le, nf2_bump)?;
+    }
     cu("[pool] after nullifiers");
     Ok(())
 }
@@ -149,12 +170,14 @@ fn flush(accounts: &mut [AccountView], rest: &[u8]) -> ProgramResult {
 
 #[inline(never)]
 fn unshield(program_id: &Address, accounts: &mut [AccountView], rest: &[u8]) -> ProgramResult {
-    // accounts: [pool W, blob R, vault W, recipient W, nf1 W, nf2 W]
-    // data: amount u64 LE
-    if accounts.len() < 6 || rest.len() < 8 {
+    // accounts: [pool W, blob R, vault W, recipient W, nf1 W, nf2 W, payer W S, system R]
+    // data: [amount u64 LE, nf1_bump u8, nf2_bump u8]
+    if accounts.len() < 8 || rest.len() < 10 {
         return Err(ProgramError::Custom(verr::MALFORMED));
     }
     let amount = u64::from_le_bytes(rest[0..8].try_into().unwrap());
+    let nf1_bump = rest[8];
+    let nf2_bump = rest[9];
     cu("[pool] unshield enter");
 
     #[allow(unsafe_code)]
@@ -181,8 +204,21 @@ fn unshield(program_id: &Address, accounts: &mut [AccountView], rest: &[u8]) -> 
         pool.queue_push(&cmout1_le).map_err(ProgramError::Custom)?;
     }
 
-    spend_nullifier(program_id, &mut accounts[4], &nf1_le)?;
-    spend_nullifier(program_id, &mut accounts[5], &nf2_le)?;
+    // accounts: [pool, blob, vault(2), recipient(3), nf1(4), nf2(5), payer(6), system(7)]
+    {
+        let (left, right) = accounts.split_at_mut(6);
+        let nf1 = &mut left[4];
+        let payer = &right[0];
+        let system = &right[1];
+        spend_nullifier(program_id, nf1, payer, system, &nf1_le, nf1_bump)?;
+    }
+    {
+        let (left, right) = accounts.split_at_mut(6);
+        let nf2 = &mut left[5];
+        let payer = &right[0];
+        let system = &right[1];
+        spend_nullifier(program_id, nf2, payer, system, &nf2_le, nf2_bump)?;
+    }
 
     // pay vault -> recipient (both writable; vault program-owned → direct move).
     // Disjoint mutable borrows via split_at_mut (vault=idx2, recipient=idx3).
@@ -199,28 +235,37 @@ fn unshield(program_id: &Address, accounts: &mut [AccountView], rest: &[u8]) -> 
 fn spend_nullifier(
     program_id: &Address,
     nf_acct: &mut AccountView,
+    payer: &AccountView,
+    system: &AccountView,
     nf_le: &[u8; 32],
+    bump: u8,
 ) -> ProgramResult {
-    // Verify the passed account is the program-derived nullifier PDA.
-    if !nf_acct.owned_by(program_id) {
-        return Err(ProgramError::Custom(verr::BAD_NF_PDA));
-    }
-    let mut matched = false;
-    let mut bump_buf = [0u8; 1];
-    for b in (0u8..=255).rev() {
-        bump_buf[0] = b;
-        let seeds: [&[u8]; 3] = [b"nf", nf_le.as_slice(), &bump_buf];
-        if let Ok(pda) = Address::create_program_address(&seeds, program_id) {
-            if &pda == nf_acct.address() {
-                matched = true;
-                break;
-            }
-        }
-    }
-    if !matched {
+    // 1. Confirm the passed account address is the program-derived nullifier PDA
+    //    ["nf", nf_le, bump] — exactly ONE create_program_address (the client
+    //    supplies the canonical bump, so no 0..=255 search is needed).
+    let bump_buf = [bump];
+    let seeds: [&[u8]; 3] = [b"nf", nf_le.as_slice(), &bump_buf];
+    let derived = Address::create_program_address(&seeds, program_id)
+        .map_err(|_| ProgramError::Custom(verr::BAD_NF_PDA))?;
+    if &derived != nf_acct.address() {
         return Err(ProgramError::Custom(verr::BAD_NF_PDA));
     }
 
+    // 2. If the PDA is not yet program-owned, it has never been spent: create it
+    //    (System CreateAccount, signed with the PDA seeds), funded by `payer`.
+    if !nf_acct.owned_by(program_id) {
+        create_nullifier_pda(program_id, nf_acct, payer, system, nf_le, bump)?;
+        // Freshly created: data is 1 byte of zero. Mark spent.
+        #[allow(unsafe_code)]
+        let buf = unsafe { nf_acct.borrow_unchecked_mut() };
+        if buf.is_empty() {
+            return Err(ProgramError::Custom(verr::BAD_NF_PDA));
+        }
+        buf[0] = 1;
+        return Ok(());
+    }
+
+    // 3. Already program-owned: data[0]==1 means previously spent → reject.
     #[allow(unsafe_code)]
     let buf = unsafe { nf_acct.borrow_unchecked_mut() };
     if buf.is_empty() {
@@ -230,6 +275,71 @@ fn spend_nullifier(
         return Err(ProgramError::Custom(verr::DOUBLE_SPEND));
     }
     buf[0] = 1;
+    Ok(())
+}
+
+/// CPI-create the nullifier PDA via System CreateAccount, signed with the PDA
+/// seeds. 1 byte of data, rent-exempt, owner = this program.
+#[cfg(feature = "cpi")]
+#[inline(never)]
+fn create_nullifier_pda(
+    program_id: &Address,
+    nf_acct: &AccountView,
+    payer: &AccountView,
+    system: &AccountView,
+    nf_le: &[u8; 32],
+    bump: u8,
+) -> ProgramResult {
+    use pinocchio::instruction::{
+        cpi::{invoke_signed, Seed, Signer},
+        InstructionAccount, InstructionView,
+    };
+
+    const SPACE: u64 = 1;
+    // Rent-exempt minimum for a 1-byte account. Devnet/mainnet rent: the
+    // lamports-per-byte-year * 2 (2-year exemption) over (128 header + space).
+    // 0.00089088 SOL = 890_880 lamports covers a 1-byte account with margin.
+    const LAMPORTS: u64 = 1_000_000;
+
+    // System CreateAccount: discriminator 0 (u32 LE) | lamports u64 | space u64 | owner[32]
+    let mut ix_data = [0u8; 4 + 8 + 8 + 32];
+    ix_data[0..4].copy_from_slice(&0u32.to_le_bytes());
+    ix_data[4..12].copy_from_slice(&LAMPORTS.to_le_bytes());
+    ix_data[12..20].copy_from_slice(&SPACE.to_le_bytes());
+    ix_data[20..52].copy_from_slice(program_id.as_ref());
+
+    let system_id = Address::new_from_array([0u8; 32]);
+    let metas = [
+        InstructionAccount::new(payer.address(), true, true),
+        InstructionAccount::new(nf_acct.address(), true, true),
+    ];
+    let ix = InstructionView {
+        program_id: &system_id,
+        accounts: &metas,
+        data: &ix_data,
+    };
+
+    let bump_arr = [bump];
+    let seeds = [
+        Seed::from(b"nf".as_slice()),
+        Seed::from(nf_le.as_slice()),
+        Seed::from(bump_arr.as_slice()),
+    ];
+    let signer = Signer::from(&seeds);
+
+    let _ = system;
+    invoke_signed::<2, AccountView>(&ix, &[payer.clone(), nf_acct.clone()], &[signer])
+}
+
+#[cfg(not(feature = "cpi"))]
+fn create_nullifier_pda(
+    _program_id: &Address,
+    _nf_acct: &AccountView,
+    _payer: &AccountView,
+    _system: &AccountView,
+    _nf_le: &[u8; 32],
+    _bump: u8,
+) -> ProgramResult {
     Ok(())
 }
 

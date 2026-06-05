@@ -2,9 +2,9 @@
 
 *A Solana-native zero-knowledge shielded-payment protocol. PLONK verified on-chain, no Groth16 wrap.*
 
-**Status: working end-to-end on Solana devnet. A real shielded-payment proof is accepted on-chain at 1,344,997 CU, under the 1.4M per-transaction limit, with no new syscall.**
+**Status: working end-to-end on Solana devnet. A real shielded-payment proof is accepted on-chain at ~1.34M CU, under the 1.4M per-transaction limit, with no new syscall. Around that verifier there is now an on-chain shielded pool (deposit/transfer/withdraw) and an off-chain wallet/SDK, exercised end-to-end on Mollusk.**
 
-This document describes what I built, exactly as it runs today, plus the measurements that back every claim and the roadmap for what comes next. I separate the *as-built* system from the *original design* wherever they differ, because three of the design choices changed during implementation and I would rather state that than paper over it.
+This document describes what I built, exactly as it runs today, plus the measurements that back every claim and the roadmap for what comes next. I separate the *as-built* system from the *original design* wherever they differ. Three design choices changed during implementation; one of them (the Poseidon hash) has since been brought back in line with the design, and I say so in §7 rather than paper over the history.
 
 The discipline behind this spec: I do not trust tests on their own. Every compute-unit (CU) number here is a real measurement on the Solana SBF virtual machine (via Mollusk) or on the live devnet validator, and the headline numbers were re-run independently. Every soundness-relevant optimization was checked for bit-identical behavior against an unoptimized reference verifier.
 
@@ -19,9 +19,11 @@ The system is not a paper design. A real SOLITON-Pay proof verifies on public de
 | Program ID | `Gu2NbGsGwmo5BsB3j4keb2SMUiTkMYuqXAYLRcuj2Fn2` |
 | Verify tx | `3Cg4P5ppJ3uq6Wa1RZ63zHVg8BGCZrqy8G9e2f44LTpFVoYqjjHQuGGu9saqBWtnX65hF2QwSjiy5gkSE9cyPXC9` |
 | Status | Ok (Finalized) |
-| On-chain CU consumed | 1,344,997 (tx meta + `simulate_transaction` agree exactly) |
+| On-chain CU consumed (recorded devnet tx) | 1,344,997 (tx meta + `simulate_transaction` agree exactly) |
 | Program-only CU | 1,344,641 of 1,399,700 |
 | Data account (proof blob) | `MZkwS68vw3LymsNHxMejFTX68JSeaZa6masnSidPRXD` |
+
+The latest Mollusk re-measurement of the same verify path is **1,343,241 CU** (the spec's CU numbers throughout reflect this current build; the recorded devnet tx above stands at the 1,344,997 it measured when sent). Both are under the 1.4M limit.
 
 `Status: Ok` means the program returned success, which means the final BN254 pairing equation evaluated to the identity — the proof was accepted. A one-byte flip in the proof produces a pairing failure (`Custom(768)`), confirmed on both Mollusk and devnet.
 
@@ -35,7 +37,7 @@ solana confirm -v 3Cg4P5ppJ3uq6Wa1RZ63zHVg8BGCZrqy8G9e2f44LTpFVoYqjjHQuGGu9saqBW
 
 ## 2. What SOLITON is
 
-SOLITON Protocol is a shielded-payment protocol whose v1.0 on-chain component is a PLONK-family verifier running natively on Solana BPF, with no wrap-down to Groth16. The application circuit, SOLITON-Pay, proves a private 2-input / 2-output payment over a note commitment tree, the same shape Zcash-style shielded pools use.
+SOLITON Protocol is a shielded-payment protocol whose core on-chain component is a PLONK-family verifier running natively on Solana BPF, with no wrap-down to Groth16. The application circuit, SOLITON-Pay, proves a private 2-input / 2-output payment over a note commitment tree, the same shape Zcash-style shielded pools use. Around that verifier the system now includes an on-chain shielded pool (deposit/transfer/withdraw, §6.5.1) and an off-chain wallet/SDK (§6.5.2), so the protocol runs end-to-end rather than being a verifier in isolation.
 
 The reason this is hard on Solana is the 1.4M CU per-transaction ceiling. A full PLONK/SHPLONK verifier with a lookup argument does not fit there by default — an earlier StandardPlonk verifier in this repository measured 2.71M CU, and the first sound SOLITON-Pay verifier measured 4.55M CU. Getting under 1.4M while staying sound is the whole engineering problem, and it was solved with field-arithmetic discipline and verifier specialization, not by waiting for a new syscall.
 
@@ -46,9 +48,11 @@ The reason this is hard on Solana is the 1.4M CU per-transaction ceiling. A full
 | Arithmetization | PLONKish, narrow fixed layout | 4 advice, 6 fixed, 5 selectors, 1 instance column |
 | Commitment | KZG over BN254 (`alt_bn128`) | uses the live mainnet syscalls |
 | Opening | SHPLONK (BDFG21) | constant pairing count |
-| Transcript | Keccak, EVM/`snark-verifier` style | **design said Poseidon; see §7** |
-| Lookup | halo2 native (plookup-style) | 8-limb × 8-bit range table; **design said logUp; see §7** |
-| Hash in-circuit | custom width-3, x⁵ S-box Poseidon | **design said circom-BN254/`sol_poseidon`; see §7** |
+| Transcript | Keccak, EVM/`snark-verifier` style | **design said Poseidon; still as-built, see §7** |
+| Lookup | halo2 native (plookup-style) | 8-limb × 8-bit range table; **design said logUp; still as-built, see §7** |
+| Hash in-circuit | circom-BN254 Poseidon (t=3, R_F=8, R_P=57, x⁵, circomlib MDS) | matches the design; bit-identical to `sol_poseidon` / `light-poseidon`; **divergence resolved, §7** |
+| Hash on-chain (tree) | `sol_poseidon` SYSCALL (circom-BN254) | ~862 CU/hash measured; same hash as the circuit |
+| Shared hash crate | `crates/soliton-poseidon` | one source of truth, used by circuit + tree + pool |
 | Field-inversion | exactly one Montgomery batch-inversion | the load-bearing rule, §5.2 |
 | Pairing | one 2-pair `alt_bn128_pairing` | the soundness check |
 
@@ -61,11 +65,11 @@ The closest comparison is Light Protocol, which also brings zero-knowledge to So
 | | SOLITON | Light Protocol |
 |---|---|---|
 | Proof system | native PLONK / SHPLONK, verified on-chain | Groth16 (wrap pattern) + ZK compression |
-| On-chain verify cost | ~1.345M CU | ~200–300k CU (Groth16 is cheap to verify) |
+| On-chain verify cost | ~1.34M CU | ~200–300k CU (Groth16 is cheap to verify) |
 | Distinguishing claim | native PLONK verify on Solana, no Groth16 wrap | production maturity, ZK compression |
 | Maturity | devnet proof-of-concept (test SRS, no audit) | production |
 
-SOLITON is not "better than" Light — it occupies a different point in the design space (native PLONK rather than a Groth16 wrap), at the cost of higher CU. Light is in production; SOLITON v1.0 is a working devnet prototype. Reaching production parity means resolving the §8 caveats: a real ceremony, an audit, and the SDK/multi-asset surface a usable protocol needs.
+SOLITON is not "better than" Light — it occupies a different point in the design space (native PLONK rather than a Groth16 wrap), at the cost of higher CU. Light is in production; SOLITON v1.0 is a working devnet prototype with an on-chain pool and a wallet/SDK around the verifier (§6.5). Reaching production parity means resolving the §8 caveats: a real ceremony, an audit, dummy-input padding, and the multi-asset surface a usable protocol needs.
 
 ---
 
@@ -73,7 +77,7 @@ SOLITON is not "better than" Light — it occupies a different point in the desi
 
 ### 3.1 Note model
 
-All hashing uses one Poseidon instance (width 3, x⁵ S-box). `H2` is 2-to-1; 3-input commitments fold as `H3(a,b,c) = H2(H2(a,b),c)`.
+All hashing uses one circom-BN254 Poseidon instance (width 3, x⁵ S-box, R_F=8, R_P=57, circomlib MDS) — the same hash the `sol_poseidon` syscall computes. `H2` is 2-to-1; 3-input commitments fold as `H3(a,b,c) = H2(H2(a,b),c)`. The in-circuit chip, the off-chain prover, `light-poseidon`, and the on-chain syscall all produce bit-identical output (see §7).
 
 ```
 sk                      spending key (secret)
@@ -98,11 +102,13 @@ tree: internal = H2(left, right), depth D = 32, root public
 | 2 | `cm_i = H3(value_i, pk_i, rho_i)` | 2 × H3 |
 | 3 | Merkle path of depth D from `cm_i` to `root` | 2 × D × H2 |
 | 4 | `nf_i = H2(sk_i, rho_i)`, equals public `nf_i` | 2 × H2 |
-| 5 | `cmout_j = H3(...)`, equals public `cmout_j` | 2 × H3 |
+| 5 | `cmout_j = H3(value_j, pk_owner_j, rho_j)`, equals public `cmout_j` | 2 × H3 |
 | 6 | `value_in₁ + value_in₂ + pub_amount = value_out₁ + value_out₂` | linear |
 | 7 | `value_out_j ∈ [0, 2⁶⁴)` via 8-limb × 8-bit lookup | halo2 lookup |
 
 Permutations per proof: `2D + 8 = 72` at D = 32. Circuit size: k = 13 for D ≤ 8, k = 14 for D ≤ 20, **k = 15 at D = 32**.
+
+Output notes bind to a **witnessed recipient address key** `pk_owner_j`, not to a witnessed `sk` — the sender pays a recipient whose spending key the sender does not (and must not) know. Input notes still prove ownership via `pk_i = H2(sk_i, 0)` because the spender holds those keys. `pub_amount` is signed (shield positive, transfer/unshield negative) and carries the fee, so one circuit covers all three operations.
 
 ### 3.4 Why depth is free
 
@@ -126,7 +132,7 @@ I wrote it generically on purpose: interpreting the constraint AST removes the r
 
 ### 4.2 Specialized verifier — the on-chain path (`verify_specialized`)
 
-Same SHPLONK / permutation / pairing machinery, but the gate / permutation / lookup identity evaluation is straight-line Rust hardcoded for SOLITON-Pay, and the gate constants are baked in Montgomery form (no runtime modular decode). This is the path deployed on devnet, at 1,344,697 CU on Mollusk.
+Same SHPLONK / permutation / pairing machinery, but the gate / permutation / lookup identity evaluation is straight-line Rust hardcoded for SOLITON-Pay, and the gate constants are baked in Montgomery form (no runtime modular decode). This is the path deployed on devnet, at ~1.343M CU on Mollusk (latest build 1,343,241).
 
 ### 4.3 The safety mechanism
 
@@ -153,10 +159,10 @@ Every row is a real Mollusk measurement of the same real proof; the proof was ac
 | SHPLONK rework | deferred denominators, leaner outer MSM | 2,078,561 |
 | global batch | one batch-inversion across all denominators | 1,627,896 |
 | dedup powers | remove recomputed `xⁿ` / `ωⁿ⁻¹` | 1,520,173 |
-| **specialize gate eval** | straight-line gates + baked constants | **1,344,697** |
-| **devnet (real hardware)** | — | **1,344,997** |
+| **specialize gate eval** | straight-line gates + baked constants | **~1.343M** |
+| **devnet (real hardware), as sent** | — | **1,344,997** |
 
-Mollusk-to-devnet delta: +300 CU (+0.022%). The emulator matches the validator.
+The current Mollusk build measures the specialized verify at **1,343,241 CU**. The recorded devnet tx (§1) measured 1,344,997 when sent; the Mollusk-to-devnet delta was small (well under 0.1%) and the emulator tracks the validator.
 
 ### 5.2 The load-bearing rule: one inversion
 
@@ -168,13 +174,29 @@ Measured unit costs that anchor the budget (this toolchain, platform-tools v1.52
 - one pure-Rust `Fr` mul+add ≈ 2,150 CU
 - `alt_bn128` G1 add 334, G1 mul 3,840, 2-pair pairing ≈ 49,208 (Agave 4.2 cost table, confirmed on-chain)
 
-### 5.3 Where the 1.345M goes (specialized)
+### 5.3 Where the 1.34M goes (specialized)
 
 read_proof + transcript ~207k · single batch-inversion (collect + invert + h-MSM + queries) ~370k · instance/Lagrange ~82k · gate+perm+lookup eval ~210k · SHPLONK reduction + MSM ~418k · pairing ~49.5k.
 
 The two remaining heavy stages are the SHPLONK MSM (~28 sequential G1 multiplications — no batched-MSM syscall exists yet) and the single batch-inversion. Both are addressed in the roadmap.
 
-### 5.4 Proof size
+### 5.4 Pool-instruction CU (the application layer)
+
+Each row is a real Mollusk measurement on the SBF VM. The Merkle tree is hashed with the `sol_poseidon` syscall.
+
+| Instruction | What it does | BPF CU |
+|---|---|---:|
+| `initialize` | set up `PoolState` (empty zero-subtree root = 32 H2) | 29,994 |
+| `shield` | deposit SOL + insert one commitment (depth-32 path = 64 H2) | 59,635 |
+| `flush` | pop 1 queued commitment and insert it (64 H2) | 58,530 |
+| `transfer` | verify proof + spend 2 nullifiers + queue 2 outputs | 1,348,242 |
+| `unshield` | verify proof + pay SOL out + queue change | 1,350,085 |
+
+All five fit under 1.4M. The two verify-bearing instructions sit at ~1.35M, which is why they cannot also hash the tree in the same transaction — see §8a.
+
+**The Poseidon syscall finding (why the hash migration was necessary).** The on-chain tree uses the `sol_poseidon` syscall at **~862 CU per H2** (measured). A depth-32 insert is 64 H2 ≈ 55k CU, which is why `shield`/`flush` are cheap. The earlier custom Poseidon was pure-Rust BN254 field arithmetic (~800 field muls per permutation), and a single pure-Rust hash measured **~3.5M CU** — 2.5× the entire 1.4M transaction budget for one hash. A tree-hashing instruction was therefore impossible with the old hash. Migrating the circuit's hash to circom-BN254 (so it matches the syscall byte-for-byte) is what made the on-chain tree feasible at all, and it is also what recovers recursion-friendliness (§7). The migration is the load-bearing reason the application layer exists.
+
+### 5.5 Proof size
 
 As-built (Keccak path): proof ≈ 2,016 bytes, VK blob ≈ 3,179 bytes, 6 public inputs, plus KZG verifying pieces. The full staged blob is 5,719 bytes. Since this exceeds the 1,232-byte transaction limit, the client writes it into a program-owned account in 7 chunk-load transactions, then sends one verify transaction that reads it.
 
@@ -196,15 +218,47 @@ As-built (Keccak path): proof ≈ 2,016 bytes, VK blob ≈ 3,179 bytes, 6 public
 
 ---
 
-## 7. Design vs as-built (three honest divergences)
+## 6.5 The application layer
 
-The original SOLITON backend design made three choices that the implementation changed. I list them because they affect what properties the v1.0 system actually has.
+The verifier above is the engine; this section describes what was built around it so the system is actually usable: an on-chain shielded pool and an off-chain wallet/SDK. Both run end-to-end on Mollusk (the SDK builds a real witness and proof, the pool verifies it, the recipient decrypts the output).
 
-1. **Transcript: designed Poseidon (`sol_poseidon`), built Keccak.** Reason: after the canonical-decode optimization, the Keccak portion of `read_proof` is only ~40k CU; switching to `sol_poseidon` (cost `61·n² + 542` per permutation) measured *worse*, not better, for this transcript shape. Keccak stays.
-2. **Lookup: designed logUp, built halo2-native (plookup-style).** Reason: the halo2 built-in lookup was already correct and proven; it works inside budget. logUp is a headroom optimization, not a requirement (§9).
-3. **In-circuit Poseidon: designed circom-BN254 (to match `sol_poseidon`), built a custom width-3 x⁵ chip.** Reason: `halo2_gadgets` 0.3.0/0.3.1 are yanked on crates.io and 0.5.0 targets a different API, and the pinned PSE git tag ships no gadgets crate. The custom chip's native and in-circuit hashes are bit-identical (which is what soundness needs), but the constants are not the circom/`sol_poseidon` set.
+### 6.5.1 The pool program (`programs/soliton-pool`)
 
-**Consequence.** Recursion-friendliness (in-circuit transcript equal to on-chain transcript via `sol_poseidon`) was a design goal that the as-built system does **not** have, because the transcript is Keccak and the Poseidon constants are custom. Recursion is therefore a roadmap item, not a v1.0 property.
+The pool custodies SOL in a program-owned vault PDA and holds a `PoolState` account with an **incremental depth-32 Poseidon Merkle tree** (frontier-based insert, hashed via the `sol_poseidon` syscall), a **root-history ring** (so a proof can reference any recent root), and a **nullifier set** (one PDA per spent nullifier). Five instructions:
+
+- `initialize` — set up `PoolState` with the empty zero-subtree root.
+- `shield` — move SOL payer→vault (System CPI) and insert the output commitment into the tree; one transaction, no proof.
+- `transfer` — verify a SOLITON-Pay proof (`verify_specialized`), require the proof's root ∈ history, mark `nf₁`/`nf₂` spent (creating their nullifier PDAs; a double-spend fails because the PDA already exists), apply `pub_amount` as fee, and **queue** the two output commitments.
+- `flush` — permissionless: pop queued commitments and incrementally insert them into the tree, updating root + history.
+- `unshield` — verify a proof, root ∈ history, mark nullifiers, pay `amount` lamports vault→recipient, queue any change commitment.
+
+**Why verify and tree-hashing cannot share a transaction.** Verify costs ~1.34M CU (§5) and a depth-32 insert costs ~55k CU (§5.4); a single `sol_poseidon` H2 is ~862 CU. Verify-plus-insert in one transaction would land near ~1.40M and risk the ceiling on any cost-table drift. So the verify-bearing instructions (`transfer`, `unshield`) only *queue* their output commitments, and a separate cheap `flush` does the hashing later. This split is the load-bearing design decision of the pool. (Before the Poseidon migration the problem was far worse: one pure-Rust hash was ~3.5M CU — see §5.4.)
+
+**The correctness gate.** The on-chain tree and the off-chain circuit hash the same way, so membership proofs verify. This is checked directly: a commitment shielded on-chain and the same root recomputed off-chain with `soliton-poseidon` are byte-equal, and the SDK's local root equals the pool's root after a flush (Mollusk). Negative controls confirm a double-spend and an unknown root are rejected with the expected error codes.
+
+### 6.5.2 The wallet / SDK (`crates/soliton-sdk`)
+
+A `Wallet` holds a spending key `sk` (→ `pk_owner = H2(sk,0)`) and an X25519 encryption keypair. It provides:
+
+- **Key management** — spending key plus a separate encryption keypair; the public `Address` is `(pk_owner, enc_pk)`.
+- **Note encryption** — output notes are sealed with `crypto_box` (X25519 + XSalsa20Poly1305) to the recipient's `enc_pk`, so only the recipient can read a note's value and blinding.
+- **Scanning** — trial-decrypt on-chain ciphertexts; a note is accepted only if its recomputed commitment matches an on-chain commitment and it is payable to this wallet.
+- **A local Merkle tree** kept in sync with the pool, so the wallet can produce real Merkle paths and roots, plus a `balance` over unspent notes.
+- **Bundle builders** — `build_shield`, `build_transfer`, `build_unshield` produce **real witnesses and real proofs** (via `build_transfer_circuit` / `prove_transfer`), not mocks. A transfer selects two input notes, builds their paths, sets a payment output to the recipient's `pk_owner` and a change output back to self, and proves against the local root.
+
+**Verified end-to-end.** An SDK-built transfer's proof is accepted by `verify_specialized`; the SDK's local tree root equals the on-chain pool root byte-for-byte (Mollusk); and the recipient wallet decrypts the output note and receives the funds. The sender never learns the recipient's `sk` — output commitments bind to the witnessed `pk_owner` (§3.3).
+
+---
+
+## 7. Design vs as-built (the honest divergences)
+
+The original SOLITON backend design made three choices that the implementation initially changed. One has since been brought back in line with the design; two remain as-built. I list all three because the history matters and because they affect what properties the system actually has.
+
+1. **Transcript: designed Poseidon (`sol_poseidon`), built Keccak — still as-built.** Reason: after the canonical-decode optimization, the Keccak portion of `read_proof` is only ~40k CU; switching to `sol_poseidon` (cost `61·n² + 542` per permutation) measured *worse*, not better, for this transcript shape. Keccak stays.
+2. **Lookup: designed logUp, built halo2-native (plookup-style) — still as-built.** Reason: the halo2 built-in lookup was already correct and proven; it works inside budget. logUp is a headroom optimization, not a requirement (§9).
+3. **In-circuit Poseidon: designed circom-BN254 (to match `sol_poseidon`), originally built a custom width-3 x⁵ chip — NOW RESOLVED.** The hash is now the circom-BN254 Poseidon (t=3, R_F=8, R_P=57, x⁵ S-box, circomlib MDS / round constants). It is bit-identical across the in-circuit chip, the off-chain prover, `light-poseidon`, and the on-chain `sol_poseidon` syscall — verified by an equality gate against `light-poseidon` and by the on-chain-vs-off-chain root gate in the pool tests. The shared implementation lives in `crates/soliton-poseidon` and is the single source of truth for circuit, tree, and pool. (The earlier custom chip was a stopgap because `halo2_gadgets` 0.3.x are yanked and the pinned PSE tag ships no gadgets crate; the current crate bakes the circom constants directly.)
+
+**Consequence.** Resolving the Poseidon divergence **recovers recursion-friendliness**: the in-circuit hash now equals the on-chain hash via `sol_poseidon`, which is the precondition for an in-circuit verifier / folding. It is also what made the on-chain Merkle tree feasible (§5.4). Two gaps remain before full recursion: the transcript is still Keccak (divergence 1) and the lookup is still halo2-native (divergence 2). Recursion is therefore closer than it was, but still a roadmap item rather than a v1.0 property.
 
 ---
 
@@ -212,8 +266,9 @@ The original SOLITON backend design made three choices that the implementation c
 
 - **The SRS is a test setup.** v1.0 uses `ParamsKZG::setup`, whose toxic waste is known. Anyone holding it can forge proofs. v1.0 is a proof-of-system on devnet, **not** a system for real value. Mainnet needs a real, audited KZG ceremony (BN254), or a migration to BLS12-381 to inherit Ethereum's ceremony (§9).
 - **BN254 is ~100-bit** post-TNFS, below a 128-bit bar. Acceptable for a devnet demonstration; documented as a deliberate, time-boxed downgrade.
-- **The Poseidon constants are custom and unaudited.** They are internally consistent (prover ≡ verifier) but not a standardized parameter set.
-- **The accepted devnet proof is real but the value model is single-asset SOL with a test SRS.** No audit has been performed.
+- **The Poseidon parameters are the standard circom-BN254 set** (t=3, x⁵, circomlib constants), now matching `sol_poseidon` / `light-poseidon` byte-for-byte. This removes the earlier "custom constants" caveat, but the parameter set and its use here are still unaudited.
+- **Fixed 2-in / 2-out, no dummy-input padding yet.** A transfer spends exactly two real input notes; there is no zero/dummy input to pad a single-note spend, and no N-in / M-out generalization. The wallet needs two spendable notes to transfer until padding lands.
+- **The accepted proof is real but the value model is single-asset SOL with a test SRS.** No audit has been performed on the circuit, verifier, or pool.
 
 ---
 
@@ -221,7 +276,7 @@ The original SOLITON backend design made three choices that the implementation c
 
 ### 9.1 Headroom levers (each preserves soundness; ordered by effort)
 
-The verifier sits at 1,344,997 CU with ~55k headroom. None of these is required to ship v1.0; they buy margin and robustness against future Agave cost changes or a larger circuit.
+The verifier sits at ~1.343M CU with ~57k headroom. None of these is required to ship v1.0; they buy margin and robustness against future Agave cost changes or a larger circuit.
 
 | Lever | Estimated saving | Cost / note |
 |---|---:|---|
@@ -230,12 +285,20 @@ The verifier sits at 1,344,997 CU with ~55k headroom. None of these is required 
 | Shplemini opening (2024) | larger SHPLONK cut | opening-scheme change (prover + verifier) |
 | Batched G1 MSM | ~−20% total | the largest single lever; the SHPLONK MSM is ~28 sequential G1 multiplications today, and a batched on-chain MSM primitive would collapse it |
 
-### 9.2 Deeper items
+### 9.2 What is done and what remains
 
-- Migrate the in-circuit Poseidon to circom-BN254 and the transcript to `sol_poseidon`, recovering recursion-friendliness; then folding/aggregation.
+**Done.** Stage 1 (the on-chain verifier under budget) — done. Stage 1.5 (the in-circuit Poseidon migrated to circom-BN254, matching `sol_poseidon`, enabling the on-chain tree and recovering recursion-friendliness) — done. Stage 2 (the on-chain pool + wallet/SDK, end-to-end on Mollusk) — done.
+
+**Remaining.**
+
+- **Dummy-input padding / N-in-M-out.** Add a zero/dummy input so a single-note spend works, then generalize beyond fixed 2-in/2-out.
+- **The real on-chain Alice→Bob demo.** Wiring the SDK to a live validator for a full shield→transfer→flush→scan→unshield round-trip on devnet — in progress.
+- **An API / JSON wrapper** over the SDK so clients other than Rust can drive the wallet.
+- **Multi-asset** support (today: single-asset SOL).
+- **A real KZG ceremony** (BN254), an **external audit**, and **mainnet deployment**.
+- Transcript to `sol_poseidon` and lookup to logUp (the two remaining §7 divergences), then folding/aggregation on top of the now-recursion-friendly hash.
 - BLS12-381 migration: 128-bit security and reuse of Ethereum's KZG ceremony (Agave already ships the BLS12-381 group/pairing syscalls; mainnet activation pending).
 - HyperPlonk / multilinear backend for a different verifier profile.
-- A real KZG ceremony, an external audit, and mainnet deployment.
 
 ---
 
@@ -253,9 +316,24 @@ cargo test -p soliton-pay --test specialized_equiv -- --nocapture
 # host acceptance (real accept + tamper reject) of the sound verifier
 cargo test -p soliton-pay --test soliton_accept -- --nocapture
 
+# shared Poseidon == light-poseidon (the gate that makes sol_poseidon usable)
+cargo test -p soliton-poseidon -- --nocapture
+
 # on-chain (BPF) CU + accept/reject, real proof, specialized path
 cargo build-sbf --manifest-path programs/soliton-verifier/Cargo.toml -- --features bpf-entrypoint
 SBF_OUT_DIR=$(pwd)/target/deploy RUST_LOG=off cargo test -p soliton-verifier --test cu_accept -- --nocapture
+
+# pool CU + correctness gate (on-chain root == off-chain reference root) + negatives
+cargo build-sbf --manifest-path programs/soliton-pool/Cargo.toml -- --features bpf-entrypoint
+SBF_OUT_DIR=$(pwd)/target/deploy cargo test -p soliton-pool --test cu_pool -- --nocapture
+
+# sol_poseidon syscall CU probe (~862 CU/hash)
+cargo build-sbf --manifest-path programs/soliton-poseidon-probe/Cargo.toml -- --features bpf-entrypoint
+SBF_OUT_DIR=$(pwd)/target/deploy cargo test -p soliton-poseidon-probe --test cu_poseidon -- --nocapture
+
+# SDK end-to-end: built transfer proof accepted; local root == pool root; recipient decrypts
+cargo test -p soliton-sdk --test offchain_gate3 -- --nocapture
+cargo test -p soliton-sdk --test mollusk_gate4 -- --nocapture
 
 # devnet deploy + real acceptance
 solana program deploy target/deploy/soliton_verifier.so --output json
@@ -266,11 +344,15 @@ cargo run -p soliton-cli -- <programId>
 
 | Path | Role |
 |---|---|
-| `circuits/soliton-pay/` | SOLITON-Pay halo2 circuit, custom Poseidon, prover (`prove_keccak`), tests |
+| `circuits/soliton-pay/` | SOLITON-Pay halo2 circuit, prover (`prove_keccak`, `prove_transfer`, `build_transfer_circuit`), tests |
+| `crates/soliton-poseidon/` | shared circom-BN254 Poseidon (single source of truth; matches `sol_poseidon` / `light-poseidon`) |
+| `crates/soliton-sdk/` | wallet/SDK: keys, note encryption, scanning, local tree, `build_shield`/`build_transfer`/`build_unshield`, end-to-end gates |
 | `crates/verifier/src/plonk/generic.rs` | generic oracle verifier + specialized path + the single batch-inversion |
 | `crates/verifier/src/vk_generic.rs`, `crates/vk-host/src/compile_generic.rs` | generic VK parse + compile |
 | `programs/soliton-verifier/` | BPF program (TAG_LOAD / TAG_VERIFY), Mollusk CU test |
+| `programs/soliton-pool/` | BPF shielded pool: tree (`sol_poseidon`), root history, nullifier PDAs, vault, queue/flush; `tests/cu_pool.rs` |
 | `programs/soliton-probe/` | the field/group-op CU probe (unit costs in §5.2) |
+| `programs/soliton-poseidon-probe/` | `sol_poseidon` syscall CU probe (~862 CU/hash; §5.4) |
 | `clients/soliton-cli/` | devnet deploy / stage / verify client |
 
 ---
