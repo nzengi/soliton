@@ -3,11 +3,14 @@ resolver = "2"
 members = [
     "crates/verifier",
     "crates/vk-host",
+    "crates/soliton-poseidon",
     "circuits/standard-plonk",
     "circuits/soliton-pay",
     "programs/verifier-program",
     "programs/soliton-probe",
     "programs/soliton-verifier",
+    "programs/soliton-pool",
+    "programs/soliton-poseidon-probe",
     "clients/devnet-send",
     "clients/soliton-cli",
 ]

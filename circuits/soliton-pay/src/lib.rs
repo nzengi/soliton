@@ -19,3 +19,12 @@ pub mod witness;
 
 pub use circuit::{Note, SolitonCircuit};
 pub use prover::{prove_and_verify, ProofArtifacts};
+
+/// Re-export of the shared no_std Poseidon (`crates/soliton-poseidon`): the ONE
+/// source of truth for the SOLITON hash (circom-BN254, == the `sol_poseidon`
+/// syscall / `light-poseidon`). The circuit's native `poseidon` module
+/// (halo2curves `Fr`) and this crate (ark-bn254 `Fr`) decode the SAME baked
+/// circom constant tables; `tests/poseidon_equivalence.rs` proves their H2/H3
+/// outputs — and the in-circuit chip's — are byte-identical to light-poseidon.
+/// The on-chain pool hashes with the `sol_poseidon` syscall, which equals this.
+pub use soliton_poseidon as shared_poseidon;

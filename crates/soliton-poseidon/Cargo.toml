@@ -1,0 +1,36 @@
+[package]
+name        = "soliton-poseidon"
+version     = "0.1.0"
+description = "Shared no_std Poseidon (width-3, x^5, Cauchy MDS) over BN254 Fr — the SINGLE source of truth for the SOLITON-Pay circuit hash and the on-chain Merkle tree. BPF-safe (ark-bn254/ark-ff only)."
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+
+[lib]
+name = "soliton_poseidon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "regen-constants"
+path = "src/bin/regen_constants.rs"
+required-features = ["regen"]
+
+[features]
+default = []
+# Enables the host-only constant generator (`gen` module + regen-constants bin).
+# Pulls in std via ark-ff and the light-poseidon reference.
+regen = ["ark-ff/std", "dep:light-poseidon"]
+
+[dependencies]
+ark-bn254      = { workspace = true }
+ark-ff         = { workspace = true }
+# Reference circom-BN254 Poseidon — used ONLY by the host-only `gen`/regen path
+# to derive the constant tables. NOT compiled into the no_std BPF runtime.
+light-poseidon = { version = "0.4", optional = true }
+
+[dev-dependencies]
+ark-ff         = { workspace = true, features = ["std"] }
+ark-bn254      = { workspace = true, features = ["std"] }
+# Host-side reference + syscall bridge for the equivalence gates.
+light-poseidon = { version = "0.4" }
+solana-poseidon = "3"

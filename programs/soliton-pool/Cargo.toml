@@ -1,0 +1,41 @@
+[package]
+name        = "soliton-pool"
+version     = "0.1.0"
+description = "On-chain SOLITON shielded pool (Pinocchio BPF): custodies SOL, incremental Poseidon Merkle tree (shared crate), nullifier PDAs, shield/transfer/flush/unshield. Devnet demo."
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["specialized"]
+# Build with the Pinocchio BPF entrypoint — required by `cargo build-sbf`.
+bpf-entrypoint = ["cpi"]
+# Forward CPI feature to pinocchio (System transfer in shield).
+cpi = ["pinocchio/cpi"]
+# Select the SPECIALIZED verifier path (matches soliton-verifier default).
+specialized = []
+# Per-stage CU markers (BPF only).
+cu-trace = []
+
+[dependencies]
+pinocchio             = { workspace = true, features = ["alloc"] }
+soliton-poseidon      = { path = "../../crates/soliton-poseidon" }
+# On-chain Merkle hashing via the `sol_poseidon` SYSCALL (cheap: ~61n²+542 CU).
+# On host this crate is `light-poseidon` (bit-identical to soliton-poseidon); on
+# BPF it is the native syscall. Either way == the circuit's circom-BN254 hash.
+solana-poseidon       = "3"
+halo2-solana-verifier = { path = "../../crates/verifier", default-features = false, features = ["solana-syscalls"] }
+
+[dev-dependencies]
+soliton-pay      = { path = "../../circuits/soliton-pay" }
+soliton-poseidon = { path = "../../crates/soliton-poseidon" }
+halo2curves      = { workspace = true }
+mollusk-svm      = { workspace = true }
+solana-program   = { workspace = true }
+solana-account   = "3"
+solana-svm-log-collector = "3"
+ark-bn254        = { workspace = true, features = ["std"] }
+ark-ff           = { workspace = true, features = ["std"] }

@@ -494,15 +494,22 @@ fn fr_mont(limbs: [u64; 4]) -> Fr {
     Fr::new_unchecked(BigInt::new(limbs))
 }
 
-// The 5 distinct Poseidon-MDS constants used by the width-3 round gate, in
-// Montgomery limb form (extracted from the live SOLITON-Pay VK; see the
-// `dump_consts` diagnostic). MDS matrix rows (output lanes 0,1,2):
-//   row0 = [M_A, M_B, M_C]   row1 = [M_B, M_C, M_D]   row2 = [M_C, M_D, M_E]
-const MDS_A: [u64; 4] = [0xfad2b89015555554, 0x75101f9f5db369e8, 0xb4ea4db753538a2e, 0x14cf9766d3bdd51d]; // be ...a0000001
-const MDS_B: [u64; 4] = [0xbc1e0a6c0fffffff, 0xd7cc17b786468f6e, 0x47afba497e7ea7a2, 0x0f9bb18d1ece5fd6]; // be ...f4000001
-const MDS_C: [u64; 4] = [0xd745397409999999, 0xb4ada7d483c3efa8, 0xc49ca2f8e57f3161, 0x162a3754ac156cb3]; // be ...c6666667
-const MDS_D: [u64; 4] = [0x7d695c480aaaaaaa, 0x3a880fcfaed9b4f4, 0xda7526dba9a9c517, 0x0a67cbb369deea8e]; // be ...48000001
-const MDS_E: [u64; 4] = [0xf41575289db6db6d, 0x07daec5e847b8b05, 0xea0fce347eecc0e2, 0x02017ed283b7fb4f]; // be ...fdb6db6e
+// The 9 Poseidon-MDS constants (circom-BN254 width-3 matrix) used by the round
+// gate, in Montgomery limb form. The circom MDS is a GENERAL 3x3 matrix (NOT the
+// banded Cauchy form the previous custom Poseidon used), so all 9 entries are
+// distinct and stored explicitly. These are the EXACT values the live
+// SOLITON-Pay VK stores (cross-checked: arkworks `soliton_poseidon::gen::gen_mds`
+// Montgomery limbs == halo2curves `soliton_pay::poseidon::mds()` Montgomery
+// limbs). MDS rows are output lanes 0,1,2.
+const MDS_00: [u64; 4] = [0xf2e8909a56fcf3d7, 0x8019ce3145ed8c1d, 0xdda896a228616418, 0x0e5ed723ffc885e1];
+const MDS_01: [u64; 4] = [0x3158f311d66c0469, 0x9511d96f69f040a0, 0xbc6996e5b22127bf, 0x07e69e17a7c9122a];
+const MDS_02: [u64; 4] = [0x28f45876169969b0, 0x3d6ded69e30a7649, 0x79aed6124c9b23dd, 0x03cf3048ffadf517];
+const MDS_10: [u64; 4] = [0x670d8bd946474dd5, 0x56daed800bf07bae, 0x5c98d51ecca20e6d, 0x1a3491eda18b0028];
+const MDS_11: [u64; 4] = [0xf0193e572ba79c47, 0x5fb2e46a6ee2dac5, 0x6892f0d5b6ffb984, 0x0df1dabd49661413];
+const MDS_12: [u64; 4] = [0x3293bffccaab272d, 0x85cbae38b11c4e1f, 0x67208956c8757b3c, 0x17ca537ab6c9d981];
+const MDS_20: [u64; 4] = [0xcc226561d2802757, 0xfcfbd22f5bb9f4ed, 0xc8ef58acce2b8678, 0x05984bb41bae9c88];
+const MDS_21: [u64; 4] = [0x17561a5176bfeefd, 0x1cd5d7be100061af, 0x714cefb2dce7646c, 0x0043bf61f2173fe9];
+const MDS_22: [u64; 4] = [0x4c72e3c51c729128, 0xd35b9fd9170d616c, 0x4d095dc74ab700a6, 0x1282bdf76dc5d39b];
 
 #[inline(always)]
 fn pow5(x: Fr) -> Fr {
@@ -542,12 +549,14 @@ fn soliton_poseidon_gates(proof: &GenericProof, out: &mut Vec<Fr>) {
     let b1 = poseidon_b(a1, rc1, is_full, false);
     let b2 = poseidon_b(a2, rc2, is_full, false);
 
-    let (m_a, m_b, m_c, m_d, m_e) =
-        (fr_mont(MDS_A), fr_mont(MDS_B), fr_mont(MDS_C), fr_mont(MDS_D), fr_mont(MDS_E));
-    // MDS rows: [A,B,C] / [B,C,D] / [C,D,E].
-    out.push(poseidon_gate(q_round, a3, m_a, m_b, m_c, b0, b1, b2));
-    out.push(poseidon_gate(q_round, a4, m_b, m_c, m_d, b0, b1, b2));
-    out.push(poseidon_gate(q_round, a5, m_c, m_d, m_e, b0, b1, b2));
+    // circom-BN254 general 3x3 MDS (9 distinct entries).
+    let (m00, m01, m02) = (fr_mont(MDS_00), fr_mont(MDS_01), fr_mont(MDS_02));
+    let (m10, m11, m12) = (fr_mont(MDS_10), fr_mont(MDS_11), fr_mont(MDS_12));
+    let (m20, m21, m22) = (fr_mont(MDS_20), fr_mont(MDS_21), fr_mont(MDS_22));
+    // next_j = Σ_i MDS[j][i] · b_i, constrained == advice next (a3,a4,a5).
+    out.push(poseidon_gate(q_round, a3, m00, m01, m02, b0, b1, b2));
+    out.push(poseidon_gate(q_round, a4, m10, m11, m12, b0, b1, b2));
+    out.push(poseidon_gate(q_round, a5, m20, m21, m22, b0, b1, b2));
 }
 
 /// The 5 selector-compressed gates (add / swap-bool / swap-left / swap-right /

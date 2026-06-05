@@ -370,13 +370,15 @@ fn assign_note_scalars(
             let value = region.assign_advice(|| "value", config.adv[2], 0,
                                              || Value::known(Fr::from(note.value)))?;
             let zero = region.assign_advice(|| "zero", config.adv[0], 1, || Value::known(Fr::zero()))?;
-            let cap = region.assign_advice(|| "cap2", config.adv[1], 1, || Value::known(Fr::from(2u64)))?;
+            // circom-BN254 domain tag is 0 (state = [0, in0, in1]).
+            let cap = region.assign_advice(|| "cap0", config.adv[1], 1, || Value::known(Fr::zero()))?;
             Ok((sk, rho, value, zero, cap))
         },
     )
 }
 
-/// H3(a,b,c) = H2(H2(a,b), c) using the width-3 2-to-1 permutation (cap = 2).
+/// H3(a,b,c) = H2(H2(a,b), c) using the width-3 2-to-1 permutation (circom
+/// domain tag = 0).
 fn hash3(
     chip: &PoseidonChip,
     config: &SolitonConfig,
@@ -390,7 +392,7 @@ fn hash3(
     hash2(chip, config, layouter, &format!("{name}_h2b"), inner, c)
 }
 
-/// H2(a,b) given two cells: permute [cap=2, a, b], squeeze lane 0.
+/// H2(a,b) given two cells: permute [domain_tag=0, a, b], squeeze lane 0.
 fn hash2(
     chip: &PoseidonChip,
     config: &SolitonConfig,
@@ -399,7 +401,7 @@ fn hash2(
     a: AssignedCell<Fr, Fr>,
     b: AssignedCell<Fr, Fr>,
 ) -> Result<AssignedCell<Fr, Fr>, Error> {
-    let cap = assign_scalar(config, layouter, &format!("{name}_cap"), Value::known(Fr::from(2u64)))?;
+    let cap = assign_scalar(config, layouter, &format!("{name}_cap"), Value::known(Fr::zero()))?;
     let out = chip.permute(layouter.namespace(|| name.to_string()), [cap, a, b])?;
     Ok(out[0].clone())
 }

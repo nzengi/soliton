@@ -1,74 +1,63 @@
-//! Minimal self-contained Poseidon permutation, width t = 3, S-box x^5,
-//! over BN254 scalar field `Fr`.
+//! circom-BN254 Poseidon permutation, width t = 3, S-box x^5, over BN254 scalar
+//! field `Fr` (halo2curves). This is the IN-CIRCUIT twin of the shared crate
+//! `soliton-poseidon` and of `light-poseidon` / the `sol_poseidon` syscall.
 //!
 //! WHY a custom chip (not `halo2_gadgets`): the workspace pins `halo2_proofs`
 //! to the PSE git tag v0.3.0 (commit 73408a1). The crates.io `halo2_gadgets`
-//! versions 0.3.0 / 0.3.1 (the ones that match the *crates.io* halo2_proofs
-//! 0.3.0 API) are BOTH YANKED on crates.io, and 0.5.0 targets a different
-//! (post-split) halo2 API that does not compile against this pinned backend.
-//! The PSE git tree at tag v0.3.0 also does not ship a `halo2_gadgets` crate.
-//! So per the brief's fallback clause we implement a minimal Poseidon chip
-//! directly against halo2_proofs.
+//! versions 0.3.0 / 0.3.1 are BOTH YANKED, and 0.5.0 targets a different
+//! (post-split) halo2 API. So we implement a minimal Poseidon chip directly
+//! against halo2_proofs.
 //!
-//! The SAME constants (`ROUND_CONSTANTS`, `MDS`) drive both the native
-//! reference permutation (`permute_native`) used to build the witness/Merkle
-//! root and the in-circuit `PoseidonChip`, so the in-circuit hash is bit-for-bit
-//! equal to the native hash. That equality — not conformance to an external
-//! Poseidon spec — is what soundness of this circuit requires.
+//! Parameters (circom-BN254): t = 3 (rate 2, capacity 1), full rounds R_F = 8,
+//! partial rounds R_P = 57, total R = 65, alpha = 5. The round constants (`ark`,
+//! flat width*R) and 3x3 MDS matrix are the circomlib constants, decoded HERE
+//! from the SAME little-endian byte tables baked into the shared crate
+//! (`soliton_poseidon::ARK_LE` / `MDS_LE`) — which were themselves pulled from
+//! `light-poseidon`. Decoding the identical bytes into halo2curves `Fr`
+//! guarantees the in-circuit hash is bit-for-bit equal to the shared crate, to
+//! light-poseidon, and to the `sol_poseidon` syscall. That equality is what
+//! lets the on-chain Merkle tree use the cheap syscall.
 //!
-//! Parameters: t = 3 (rate 2, capacity 1), full rounds R_F = 8, partial rounds
-//! R_P = 56. Total rounds R = 64. Constants are derived deterministically (see
-//! `gen_constants`) so they are reproducible and unstructured.
+//! State / sponge convention (circom): state = [domain_tag = 0, in0, in1];
+//! per round add ark → S-box → MDS; full rounds S-box all lanes, partial rounds
+//! lane 0 only; output is lane 0.
 
 use halo2curves::bn256::Fr;
-use halo2curves::ff::Field;
+use halo2curves::ff::{Field, PrimeField};
+
+use soliton_poseidon::{ARK_LE, MDS_LE};
 
 pub const T: usize = 3;
 pub const R_F: usize = 8;
-pub const R_P: usize = 56;
-pub const ROUNDS: usize = R_F + R_P; // 64
+pub const R_P: usize = 57;
+pub const ROUNDS: usize = R_F + R_P; // 65
 
-/// Deterministic field element from a 64-bit counter, via repeated squaring of
-/// a fixed seed mixed with the counter. Unstructured enough for round constants
-/// in a *consistency-only* (native == in-circuit) setting.
-fn fe_from_counter(seed: u64, ctr: u64) -> Fr {
-    // Mix counter into a large value then reduce mod field by Fr::from + powers.
-    let mut acc = Fr::from(seed)
-        + Fr::from(0x9E3779B97F4A7C15u64) * Fr::from(ctr + 1)
-        + Fr::from(0xBF58476D1CE4E5B9u64);
-    // A few nonlinear steps to spread bits across the whole field.
-    for _ in 0..5 {
-        acc = acc.square() + acc + Fr::from(ctr.wrapping_mul(0x94D049BB133111EBu64));
-    }
-    acc
+/// Decode 32 canonical LE bytes into a halo2curves `Fr`. The baked tables are
+/// canonical (produced from light-poseidon / ark `into_bigint().to_bytes_le()`),
+/// so `from_repr` (which takes a canonical LE little-endian repr) succeeds.
+fn fr_from_le(b: &[u8; 32]) -> Fr {
+    let mut repr = <Fr as PrimeField>::Repr::default();
+    repr.as_mut().copy_from_slice(b);
+    let ct = Fr::from_repr(repr);
+    assert!(bool::from(ct.is_some()), "non-canonical baked constant");
+    ct.unwrap()
 }
 
-/// Generate round constants: ROUNDS * T values.
+/// Round constants reshaped to ROUNDS rows of T lanes (decoded from the shared
+/// crate's `ARK_LE`).
 fn gen_round_constants() -> Vec<[Fr; T]> {
-    let mut out = Vec::with_capacity(ROUNDS);
-    let mut ctr = 0u64;
-    for _ in 0..ROUNDS {
-        let mut row = [Fr::ZERO; T];
-        for r in row.iter_mut() {
-            *r = fe_from_counter(0xA110CA7Eu64, ctr);
-            ctr += 1;
-        }
-        out.push(row);
-    }
-    out
+    ARK_LE
+        .iter()
+        .map(|row| [fr_from_le(&row[0]), fr_from_le(&row[1]), fr_from_le(&row[2])])
+        .collect()
 }
 
-/// Generate an invertible-by-construction MDS-style matrix (Cauchy matrix:
-/// M[i][j] = 1 / (x_i + y_j) with distinct x_i, y_j). Cauchy matrices are MDS.
+/// circom-BN254 width-3 MDS matrix (decoded from the shared crate's `MDS_LE`).
 fn gen_mds() -> [[Fr; T]; T] {
-    // x_i = i, y_j = T + j  -> all (x_i + y_j) distinct & nonzero.
-    let xs: [Fr; T] = std::array::from_fn(|i| Fr::from(i as u64));
-    let ys: [Fr; T] = std::array::from_fn(|j| Fr::from((T + j) as u64));
     let mut m = [[Fr::ZERO; T]; T];
-    for i in 0..T {
-        for j in 0..T {
-            let denom = xs[i] + ys[j];
-            m[i][j] = denom.invert().unwrap();
+    for (i, row) in MDS_LE.iter().enumerate() {
+        for (j, e) in row.iter().enumerate() {
+            m[i][j] = fr_from_le(e);
         }
     }
     m
@@ -93,7 +82,8 @@ fn sbox(x: Fr) -> Fr {
     x4 * x
 }
 
-/// Native Poseidon permutation on a width-3 state. Mutates `state` in place.
+/// Native circom-BN254 Poseidon permutation on a width-3 state. Mutates `state`
+/// in place. Identical round order to `soliton_poseidon::permute`.
 pub fn permute_native(state: &mut [Fr; T]) {
     let rc = round_constants();
     let m = mds();
@@ -146,19 +136,15 @@ pub fn permute_native(state: &mut [Fr; T]) {
     debug_assert_eq!(round, ROUNDS);
 }
 
-/// 2-to-1 native hash: H(a, b). Sponge with capacity element initialised to a
-/// domain tag (here the field encoding of `2`), absorb (a,b) into rate, permute,
-/// squeeze state[0].
+/// 2-to-1 native hash H(a, b): circom convention — state = [domain_tag = 0, a, b],
+/// permute, squeeze lane 0.
 pub fn hash2_native(a: Fr, b: Fr) -> Fr {
-    let mut state = [Fr::from(2u64), a, b];
+    let mut state = [Fr::ZERO, a, b];
     permute_native(&mut state);
     state[0]
 }
 
-/// 3-to-1 native hash: H(a, b, c) via sequential 2-to-1 absorption:
-/// H3(a,b,c) = H2( H2(a, b), c ). Documented arity choice: we use the width-3
-/// 2-to-1 permutation twice rather than a separate width-4 spec, so a single
-/// Poseidon chip serves the whole circuit.
+/// 3-to-1 native hash: H(a, b, c) = H2( H2(a, b), c ).
 pub fn hash3_native(a: Fr, b: Fr, c: Fr) -> Fr {
     hash2_native(hash2_native(a, b), c)
 }

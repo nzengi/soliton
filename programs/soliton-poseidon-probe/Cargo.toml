@@ -1,0 +1,25 @@
+[package]
+name        = "soliton-poseidon-probe"
+version     = "0.1.0"
+description = "CU probe for the shared SOLITON Poseidon on real SBF: one H2 permutation and one depth-32 incremental insert (32 H2). Locks the shield/transfer tx design."
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+bpf-entrypoint = []
+
+[dependencies]
+pinocchio        = { workspace = true, features = ["alloc"] }
+soliton-poseidon = { path = "../../crates/soliton-poseidon" }
+# Measure the cheap `sol_poseidon` SYSCALL path (the migration target).
+solana-poseidon  = "3"
+
+[dev-dependencies]
+mollusk-svm    = { workspace = true }
+solana-program = { workspace = true }
+solana-account = "3"
