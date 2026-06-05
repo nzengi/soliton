@@ -125,7 +125,7 @@ pub fn prove_keccak(
     prove_keccak_circuit(k, build_satisfying(depth, seed), seed)
 }
 
-/// Prove a REAL transfer (Stage 2). Builds the circuit from real input/output
+/// Prove a transfer (Stage 2). Builds the circuit from input/output
 /// notes via `witness::build_transfer_circuit` (which asserts the Merkle paths
 /// reproduce `root`), proves it with the Keccak-BE transcript, self-verifies,
 /// and returns the on-chain-verifier artifacts.

@@ -1,11 +1,11 @@
 //! On-chain SOUND SOLITON-Pay verifier (Pinocchio BPF program).
 //!
 //! This program runs the SAME, host-verified generic verifier
-//! (`halo2_solana_verifier::verify_generic`) that already ACCEPTS the real
+//! (`halo2_solana_verifier::verify_generic`) that already ACCEPTS the
 //! SOLITON-Pay proof on host (pairing == TRUE) and rejects tampered proofs —
-//! only here it runs on the real SBF VM. There is NO synthetic arithmetic and
-//! NO structural skeleton: it parses the v2 VK + the real halo2 proof bytes +
-//! the real public inputs + the KZG SRS pieces and returns success iff the
+//! only here it runs on the real SBF VM. It does no placeholder arithmetic and
+//! has no structural skeleton: it parses the v2 VK + the halo2 proof bytes +
+//! the public inputs + the KZG SRS pieces and returns success iff the
 //! single BN254 pairing check returns true.
 //!
 //! ## Blob format (built by the host client/test)
@@ -16,7 +16,7 @@
 //! vk_v2_len   : u32 LE
 //! vk_bytes : [u8; vk_v2_len]          generic on-chain VK blob
 //! proof_len   : u32 LE
-//! proof_bytes : [u8; proof_len]          real halo2 Keccak-BE proof
+//! proof_bytes : [u8; proof_len]          halo2 Keccak-BE proof
 //! n_pi        : u32 LE
 //! pi[]        : [u8; 32 * n_pi]          public inputs, Fr BE
 //! g1_one      : [u8; 64]                 [1]_1  G1 BE
@@ -82,7 +82,7 @@ fn take<'a>(data: &'a [u8], cur: &mut usize, n: usize) -> Result<&'a [u8], u32> 
 
 /// Parse the staged blob and run the SOUND generic verifier.
 ///
-/// Returns `Ok(true)` iff the real pairing check passed (proof accepted).
+/// Returns `Ok(true)` iff the pairing check passed (proof accepted).
 pub fn verify(data: &[u8]) -> Result<bool, u32> {
     cu("[stage] enter");
 
@@ -146,7 +146,7 @@ mod entry {
 
     entrypoint!(process_instruction);
 
-    // Instruction tags. The real proof+VK blob is far larger than the 1232 B
+    // Instruction tags. The proof+VK blob is far larger than the 1232 B
     // per-tx limit, so it is chunk-written into a program-owned data account
     // (TAG_LOAD) before TAG_VERIFY reads it.
     const TAG_LOAD: u8 = 0x00; // [0x00 | offset:u32 LE | chunk…] → accounts[0].data[off..]
@@ -193,7 +193,7 @@ mod entry {
         };
 
         match super::verify(data) {
-            // Ok(true) only: success == the real pairing check ACCEPTED the proof.
+            // Ok(true) only: success == the pairing check ACCEPTED the proof.
             Ok(true) => Ok(()),
             Ok(false) => unreachable!(),
             Err(code) => Err(ProgramError::Custom(code)),

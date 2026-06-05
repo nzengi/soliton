@@ -1,14 +1,14 @@
 //! Devnet finale for the SOUND `soliton-verifier` BPF program.
 //!
-//! Builds the REAL SOLITON-Pay proof via `soliton_pay::prover::prove_keccak`,
+//! Builds the SOLITON-Pay proof via `soliton_pay::prover::prove_keccak`,
 //! serializes the proof+VK+SRS blob EXACTLY as `programs/soliton-verifier/
 //! tests/cu_accept.rs::build_blob` does, stages it into a program-owned data
 //! account (chunked, since the blob exceeds the 1232-byte per-tx limit), then
-//! sends the TAG_VERIFY tx with a raised compute budget and reports the REAL
+//! sends the TAG_VERIFY tx with a raised compute budget and reports the
 //! on-chain compute-unit consumption from the confirmed tx meta, cross-checked
 //! against `simulate_transaction`.
 //!
-//! A Status==Ok verify tx == the on-chain program returned success == the real
+//! A Status==Ok verify tx == the on-chain program returned success == the
 //! BN254 pairing check returned TRUE == proof ACCEPTED on devnet.
 //!
 //! Flow:
@@ -105,13 +105,13 @@ fn main() -> Result<()> {
         bal as f64 / 1e9
     );
 
-    // ── build the REAL SOLITON-Pay proof blob ──
+    // ── build the SOLITON-Pay proof blob ──
     eprintln!("proving SOLITON-Pay (k={K}, depth={DEPTH}, seed=[7;32])…");
     let art = soliton_pay::prover::prove_keccak(K, DEPTH, SEED)
         .map_err(|e| anyhow!("prove_keccak failed: {e:?}"))?;
     let blob = build_blob(&art);
     eprintln!(
-        "real proof: vk_v2={} proof={} n_pi={} | blob = {} bytes",
+        "proof: vk_v2={} proof={} n_pi={} | blob = {} bytes",
         art.vk_bytes.len(),
         art.proof_bytes.len(),
         art.public_inputs.len(),
@@ -210,17 +210,17 @@ fn main() -> Result<()> {
         eprintln!("simulate err: {err:?}");
     }
 
-    // Send + confirm the real verify tx.
+    // Send + confirm the verify tx.
     eprintln!("sending verify tx (CU limit {CU_LIMIT}, heap 256KB)…");
     let bh = rpc.get_latest_blockhash()?;
     let verify_tx =
         Transaction::new_signed_with_payer(&ixs, Some(&payer.pubkey()), &[&payer], bh);
     let verify_sig = rpc
         .send_and_confirm_transaction(&verify_tx)
-        .context("verify tx (Status != Ok means the real proof was REJECTED on-chain)")?;
+        .context("verify tx (Status != Ok means the proof was REJECTED on-chain)")?;
     eprintln!("verify confirmed (Status Ok) — {verify_sig}");
 
-    // ── report REAL on-chain CU from confirmed tx meta ──
+    // ── report on-chain CU from confirmed tx meta ──
     let fetched = rpc
         .get_transaction_with_config(
             &verify_sig,
@@ -240,12 +240,12 @@ fn main() -> Result<()> {
     let tx_err: Option<_> = meta.err.clone();
 
     println!();
-    println!("================ DEVNET REAL-PROOF CU REPORT ================");
+    println!("================ DEVNET PROOF CU REPORT ================");
     println!("program_id              : {program_id}");
     println!("data_account            : {}", data_acct.pubkey());
     println!("verify tx signature     : {verify_sig}");
     println!("explorer                : https://explorer.solana.com/tx/{verify_sig}?cluster=devnet");
-    println!("tx Status               : {}", if tx_err.is_none() { "Ok (real proof ACCEPTED, pairing TRUE)" } else { "FAILED" });
+    println!("tx Status               : {}", if tx_err.is_none() { "Ok (proof ACCEPTED, pairing TRUE)" } else { "FAILED" });
     if let Some(e) = &tx_err {
         println!("tx err                  : {e:?}");
     }

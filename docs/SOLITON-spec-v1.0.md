@@ -2,7 +2,7 @@
 
 *A Solana-native zero-knowledge shielded-payment protocol. PLONK verified on-chain, no Groth16 wrap.*
 
-**Status: working end-to-end on Solana devnet. A real shielded-payment proof is accepted on-chain at ~1.34M CU, under the 1.4M per-transaction limit, with no new syscall. Around that verifier there is now an on-chain shielded pool (deposit/transfer/withdraw) and an off-chain wallet/SDK, exercised end-to-end on Mollusk.**
+**Status: working end-to-end on Solana devnet. A shielded-payment proof is accepted on-chain at ~1.34M CU, under the 1.4M per-transaction limit, with no new syscall. Around that verifier there is now an on-chain shielded pool (deposit/transfer/withdraw) and an off-chain wallet/SDK, exercised end-to-end on Mollusk.**
 
 This document describes what I built, exactly as it runs today, plus the measurements that back every claim and the roadmap for what comes next. I separate the *as-built* system from the *original design* wherever they differ. Three design choices changed during implementation; one of them (the Poseidon hash) has since been brought back in line with the design, and I say so in §7 rather than paper over the history.
 
@@ -12,7 +12,7 @@ The discipline behind this spec: I do not trust tests on their own. Every comput
 
 ## 1. On-chain evidence
 
-The system is not a paper design. A real SOLITON-Pay proof verifies on public devnet:
+The system is not a paper design. A SOLITON-Pay proof verifies on public devnet:
 
 | Item | Value |
 |---|---|
@@ -116,7 +116,7 @@ The verifier is succinct: its cost does not grow with circuit size. D = 32 (a 4.
 
 ### 3.5 Soundness of the circuit (negative controls)
 
-`MockProver` rejects three independent tampered witnesses — unbalanced values, a forged nullifier, and an out-of-range (≥ 2⁶⁴) output value. These confirm the constraints actually bind rather than passing vacuously. The real `verify_proof` accepts the honest witness.
+`MockProver` rejects three independent tampered witnesses — unbalanced values, a forged nullifier, and an out-of-range (≥ 2⁶⁴) output value. These confirm the constraints actually bind rather than passing vacuously. And `verify_proof` accepts the honest witness.
 
 ---
 
@@ -126,9 +126,9 @@ There are two verifier paths, and the relationship between them is the soundness
 
 ### 4.1 Generic verifier — the oracle (`verify_generic`)
 
-A from-scratch, sound, generic PLONK/SHPLONK verifier that consumes the full halo2 `ConstraintSystem`: it reads the verifying key (column and query tables, gate ASTs, lookups, permutation column kinds), runs the Keccak Fiat-Shamir transcript, evaluates the gate / permutation / lookup identities at the challenge point by interpreting the gate ASTs, runs the real SHPLONK reduction, and ends in one BN254 pairing.
+A from-scratch, sound, generic PLONK/SHPLONK verifier that consumes the full halo2 `ConstraintSystem`: it reads the verifying key (column and query tables, gate ASTs, lookups, permutation column kinds), runs the Keccak Fiat-Shamir transcript, evaluates the gate / permutation / lookup identities at the challenge point by interpreting the gate ASTs, runs the SHPLONK reduction, and ends in one BN254 pairing.
 
-I wrote it generically on purpose: interpreting the constraint AST removes the risk of hand-transcribing the gate algebra wrong. It is the reference against which everything else is checked. It accepts the real proof (pairing true) and rejects tampering. Its cost on BPF is 1,520,173 CU — sound but over budget.
+I wrote it generically on purpose: interpreting the constraint AST removes the risk of hand-transcribing the gate algebra wrong. It is the reference against which everything else is checked. It accepts the proof (pairing true) and rejects tampering. Its cost on BPF is 1,520,173 CU — sound but over budget.
 
 ### 4.2 Specialized verifier — the on-chain path (`verify_specialized`)
 
@@ -136,7 +136,7 @@ Same SHPLONK / permutation / pairing machinery, but the gate / permutation / loo
 
 ### 4.3 The safety mechanism
 
-The specialization could, in principle, diverge from the real constraint algebra. Two guards make that impossible to ship silently:
+The specialization could, in principle, diverge from the constraint algebra. Two guards make that impossible to ship silently:
 
 1. **Oracle equivalence.** On 8 distinct (seed, depth) proofs, `verify_generic` and `verify_specialized` produce a bit-identical intermediate `expected_h_eval` and an identical accept/reject decision. All 8 pass. If the specialized algebra were wrong, the intermediate value would differ.
 2. **Shape guard.** The specialized path runs only when the VK matches SOLITON-Pay exactly (`gate_polys.len() == 8 && lookups.len() == 1`); any other VK falls back to the generic verifier. A different circuit cannot accidentally use the wrong straight-line code.
@@ -149,7 +149,7 @@ The generic verifier is never deleted. It remains in the binary as the oracle an
 
 ### 5.1 The journey, measured
 
-Every row is a real Mollusk measurement of the same real proof; the proof was accepted at every step.
+Every row is a real Mollusk measurement of the same proof; the proof was accepted at every step.
 
 | Step | What changed | BPF CU |
 |---|---|---:|
@@ -220,7 +220,7 @@ As-built (Keccak path): proof ≈ 2,016 bytes, VK blob ≈ 3,179 bytes, 6 public
 
 ## 6.5 The application layer
 
-The verifier above is the engine; this section describes what was built around it so the system is actually usable: an on-chain shielded pool and an off-chain wallet/SDK. Both run end-to-end on Mollusk (the SDK builds a real witness and proof, the pool verifies it, the recipient decrypts the output).
+The verifier above is the engine; this section describes what was built around it so the system is actually usable: an on-chain shielded pool and an off-chain wallet/SDK. Both run end-to-end on Mollusk (the SDK builds a witness and proof, the pool verifies it, the recipient decrypts the output).
 
 ### 6.5.1 The pool program (`programs/soliton-pool`)
 
@@ -243,8 +243,8 @@ A `Wallet` holds a spending key `sk` (→ `pk_owner = H2(sk,0)`) and an X25519 e
 - **Key management** — spending key plus a separate encryption keypair; the public `Address` is `(pk_owner, enc_pk)`.
 - **Note encryption** — output notes are sealed with `crypto_box` (X25519 + XSalsa20Poly1305) to the recipient's `enc_pk`, so only the recipient can read a note's value and blinding.
 - **Scanning** — trial-decrypt on-chain ciphertexts; a note is accepted only if its recomputed commitment matches an on-chain commitment and it is payable to this wallet.
-- **A local Merkle tree** kept in sync with the pool, so the wallet can produce real Merkle paths and roots, plus a `balance` over unspent notes.
-- **Bundle builders** — `build_shield`, `build_transfer`, `build_unshield` produce **real witnesses and real proofs** (via `build_transfer_circuit` / `prove_transfer`), not mocks. A transfer selects two input notes, builds their paths, sets a payment output to the recipient's `pk_owner` and a change output back to self, and proves against the local root.
+- **A local Merkle tree** kept in sync with the pool, so the wallet can produce Merkle paths and roots, plus a `balance` over unspent notes.
+- **Bundle builders** — `build_shield`, `build_transfer`, `build_unshield` produce **witnesses and proofs** (via `build_transfer_circuit` / `prove_transfer`), not mocks. A transfer selects two input notes, builds their paths, sets a payment output to the recipient's `pk_owner` and a change output back to self, and proves against the local root.
 
 **Verified end-to-end.** An SDK-built transfer's proof is accepted by `verify_specialized`; the SDK's local tree root equals the on-chain pool root byte-for-byte (Mollusk); and the recipient wallet decrypts the output note and receives the funds. The sender never learns the recipient's `sk` — output commitments bind to the witnessed `pk_owner` (§3.3).
 
@@ -267,8 +267,8 @@ The original SOLITON backend design made three choices that the implementation i
 - **The SRS is a test setup.** v1.0 uses `ParamsKZG::setup`, whose toxic waste is known. Anyone holding it can forge proofs. v1.0 is a proof-of-system on devnet, **not** a system for real value. Mainnet needs a real, audited KZG ceremony (BN254), or a migration to BLS12-381 to inherit Ethereum's ceremony (§9).
 - **BN254 is ~100-bit** post-TNFS, below a 128-bit bar. Acceptable for a devnet demonstration; documented as a deliberate, time-boxed downgrade.
 - **The Poseidon parameters are the standard circom-BN254 set** (t=3, x⁵, circomlib constants), now matching `sol_poseidon` / `light-poseidon` byte-for-byte. This removes the earlier "custom constants" caveat, but the parameter set and its use here are still unaudited.
-- **Fixed 2-in / 2-out, no dummy-input padding yet.** A transfer spends exactly two real input notes; there is no zero/dummy input to pad a single-note spend, and no N-in / M-out generalization. The wallet needs two spendable notes to transfer until padding lands.
-- **The accepted proof is real but the value model is single-asset SOL with a test SRS.** No audit has been performed on the circuit, verifier, or pool.
+- **Fixed 2-in / 2-out, no dummy-input padding yet.** A transfer spends exactly two input notes; there is no zero/dummy input to pad a single-note spend, and no N-in / M-out generalization. The wallet needs two spendable notes to transfer until padding lands.
+- **The accepted proof is sound, but the value model is single-asset SOL with a test SRS.** No audit has been performed on the circuit, verifier, or pool.
 
 ---
 
@@ -292,7 +292,7 @@ The verifier sits at ~1.343M CU with ~57k headroom. None of these is required to
 **Remaining.**
 
 - **Dummy-input padding / N-in-M-out.** Add a zero/dummy input so a single-note spend works, then generalize beyond fixed 2-in/2-out.
-- **The real on-chain Alice→Bob demo.** Wiring the SDK to a live validator for a full shield→transfer→flush→scan→unshield round-trip on devnet — in progress.
+- **The on-chain Alice→Bob demo.** Wiring the SDK to a live validator for a full shield→transfer→flush→scan→unshield round-trip on devnet — in progress.
 - **An API / JSON wrapper** over the SDK so clients other than Rust can drive the wallet.
 - **Multi-asset** support (today: single-asset SOL).
 - **A real KZG ceremony** (BN254), an **external audit**, and **mainnet deployment**.
@@ -307,19 +307,19 @@ The verifier sits at ~1.343M CU with ~57k headroom. None of these is required to
 Workspace: this repository. Toolchain: `cargo build-sbf` (Solana 3.1.10, platform-tools v1.52), Mollusk 0.12.
 
 ```
-# circuit: real proof + soundness (MockProver + verify_proof + 3 negative controls)
+# circuit: proof + soundness (MockProver + verify_proof + 3 negative controls)
 cargo test -p soliton-pay --test prove -- --nocapture
 
 # specialized verifier ≡ generic oracle (8/8 bit-identical)
 cargo test -p soliton-pay --test specialized_equiv -- --nocapture
 
-# host acceptance (real accept + tamper reject) of the sound verifier
+# host acceptance (accept + tamper reject) of the sound verifier
 cargo test -p soliton-pay --test soliton_accept -- --nocapture
 
 # shared Poseidon == light-poseidon (the gate that makes sol_poseidon usable)
 cargo test -p soliton-poseidon -- --nocapture
 
-# on-chain (BPF) CU + accept/reject, real proof, specialized path
+# on-chain (BPF) CU + accept/reject, specialized path
 cargo build-sbf --manifest-path programs/soliton-verifier/Cargo.toml -- --features bpf-entrypoint
 SBF_OUT_DIR=$(pwd)/target/deploy RUST_LOG=off cargo test -p soliton-verifier --test cu_accept -- --nocapture
 
@@ -332,10 +332,10 @@ cargo build-sbf --manifest-path programs/soliton-poseidon-probe/Cargo.toml -- --
 SBF_OUT_DIR=$(pwd)/target/deploy cargo test -p soliton-poseidon-probe --test cu_poseidon -- --nocapture
 
 # SDK end-to-end: built transfer proof accepted; local root == pool root; recipient decrypts
-cargo test -p soliton-sdk --test offchain_gate3 -- --nocapture
-cargo test -p soliton-sdk --test mollusk_gate4 -- --nocapture
+cargo test -p soliton-sdk --test offchain -- --nocapture
+cargo test -p soliton-sdk --test mollusk -- --nocapture
 
-# devnet deploy + real acceptance
+# devnet deploy + acceptance
 solana program deploy target/deploy/soliton_verifier.so --output json
 cargo run -p soliton-cli -- <programId>
 ```

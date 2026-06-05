@@ -2,7 +2,7 @@
 //!
 //! Loads the `.so` produced by `cargo build-sbf`, invokes it with the golden
 //! test vector, and prints `compute_units_consumed`. This is also the first
-//! place where the BPF-stack-frame-warning real-runtime question gets
+//! place where the BPF-stack-frame-warning runtime question gets
 //! answered: if the program runs and verifies, the warnings are conservative;
 //! if it panics, we need to refactor for stack budget.
 //!

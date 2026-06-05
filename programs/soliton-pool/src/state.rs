@@ -27,7 +27,7 @@ use solana_poseidon::{hashv, Endianness, Parameters};
 /// 2-to-1 Merkle hash over 32-byte LE field encodings, via the `sol_poseidon`
 /// SYSCALL (circom-BN254). On BPF this is the native syscall (~cheap); on host
 /// it is `light-poseidon` — both bit-identical to `soliton_poseidon::hash2`
-/// (proven in `crates/soliton-poseidon` Gate A and `cu_pool.rs` Gate G).
+/// (proven in `crates/soliton-poseidon` and `cu_pool.rs`).
 ///
 /// Inputs/outputs are little-endian canonical field bytes (the tree's storage
 /// convention), so we use `Endianness::LittleEndian`. Both inputs are always

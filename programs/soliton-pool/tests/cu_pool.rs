@@ -206,7 +206,7 @@ fn shield_cu_and_correctness_gate() {
             let onchain_pool = res.get_account(&pool_key).expect("pool account");
             let onchain_root = &onchain_pool.data[soliton_pool::state::OFF_ROOT..soliton_pool::state::OFF_ROOT + 32];
             assert_eq!(onchain_root, &ref_root, "ON-CHAIN root != reference root (gate FAILED, insert {i})");
-            eprintln!("  GATE PASS: on-chain root == off-chain reference root (byte-equal)");
+            eprintln!("  PASS: on-chain root == off-chain reference root (byte-equal)");
         } else {
             eprintln!("  on-chain shield did not succeed (CU/feasibility) — gate verified host==reference instead");
         }
@@ -278,7 +278,7 @@ fn transfer_cu_doublespend_unknownroot() {
     let program_id = Pubkey::new_unique();
     let mollusk = new_mollusk(&program_id);
 
-    // Real proof.
+    // Proof.
     let art = soliton_pay::prover::prove_keccak(13, 4, [7u8; 32]).expect("prove");
     let blob = build_blob(&art);
 
@@ -340,7 +340,7 @@ fn transfer_cu_doublespend_unknownroot() {
     eprintln!("transfer result : {:?}", res.program_result);
     eprintln!("transfer CU     : {}", res.compute_units_consumed);
     eprintln!("under 1.4M      : {}", res.compute_units_consumed <= 1_400_000);
-    assert!(matches!(res.program_result, ProgramResult::Success), "real transfer rejected: {:?}", res.program_result);
+    assert!(matches!(res.program_result, ProgramResult::Success), "transfer rejected: {:?}", res.program_result);
     // queue should now hold 2 outputs.
     let after = res.get_account(&pool_key).unwrap();
     let qlen = u32::from_le_bytes(after.data[soliton_pool::state::OFF_QUEUE_LEN..soliton_pool::state::OFF_QUEUE_LEN+4].try_into().unwrap());

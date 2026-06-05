@@ -92,7 +92,7 @@ fn cu_poseidon() {
         eprintln!("   On-chain tree hashing is INFEASIBLE with this hash as-is.");
     }
 
-    // This probe DOCUMENTS the real cost; the hard gate lives in the report, not
+    // This probe DOCUMENTS the measured cost; the hard gate lives in the report, not
     // an assert, because the measured infeasibility IS the deliverable. We still
     // assert the program ran correctly (above) and that H2 is deterministic by
     // construction (equivalence test). Keep the measurement non-fatal:

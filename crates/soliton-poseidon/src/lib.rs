@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(empty_subtree_root(2), hash2(e1, e1));
     }
 
-    /// GATE A (shared == light-poseidon): the pure-Rust permutation in this crate
+    /// shared == light-poseidon: the pure-Rust permutation in this crate
     /// must equal `light_poseidon::Poseidon::<Fr>::new_circom(2).hash([a,b])`
     /// byte-for-byte. This is what makes `sol_poseidon` usable on-chain.
     #[test]

@@ -1,4 +1,4 @@
-//! GATE 3: off-chain Alice -> Bob private transfer.
+//! Off-chain Alice -> Bob private transfer.
 //!
 //! Alice shields two notes; both wallets scan the shared ledger so their local
 //! trees stay in sync. Alice builds a transfer to Bob; we ASSERT the proof
@@ -6,8 +6,8 @@
 //! output commitment + ciphertext, decrypts, and his balance == amount. Alice's
 //! change is correct.
 //!
-//! "I don't trust tests": the gate is a real verify_specialized(...) == Ok(true)
-//! and real balance equalities printed with numbers.
+//! "I don't trust tests": the check is a verify_specialized(...) == Ok(true) and
+//! balance equalities printed with numbers.
 
 use ark_bn254::Fr;
 use halo2curves::bn256::Fr as HFr;
@@ -43,7 +43,7 @@ fn build_kzg_vk(art: &soliton_pay::prover::KeccakArtifacts) -> KzgVk {
 }
 
 #[test]
-fn gate3_offchain_alice_to_bob() {
+fn offchain_alice_to_bob() {
     let mut alice = Wallet::from_seed(1);
     let mut bob = Wallet::from_seed(2);
     let bob_addr = bob.address();
@@ -73,7 +73,7 @@ fn gate3_offchain_alice_to_bob() {
         .build_transfer(&bob_addr, amount, fee)
         .expect("build_transfer failed");
 
-    // GATE 3a: the proof VERIFIES against the transfer root.
+    // The proof VERIFIES against the transfer root.
     let art = &bundle.artifacts;
     let kzg_vk = build_kzg_vk(art);
     let pubs: Vec<[u8; 32]> = art.public_inputs.iter().map(fr_to_be_h).collect();
@@ -102,11 +102,11 @@ fn gate3_offchain_alice_to_bob() {
     bob.scan(new_cms, new_cts);
     alice.scan(new_cms, new_cts);
 
-    // GATE 3b: Bob received the payment.
+    // Bob received the payment.
     assert_eq!(bob.balance(), amount, "Bob balance != payment amount");
     println!("[PASS] Bob received {} (balance={})", amount, bob.balance());
 
-    // GATE 3c: Alice's change is correct: 150 - 140 - 10(fee) = 0.
+    // Alice's change is correct: 150 - 140 - 10(fee) = 0.
     let expected_change = 150 - amount - fee;
     assert_eq!(alice.balance(), expected_change, "Alice change wrong");
     println!(
@@ -118,7 +118,7 @@ fn gate3_offchain_alice_to_bob() {
 }
 
 #[test]
-fn gate3_double_spend_prevented() {
+fn double_spend_prevented() {
     // Spending the same notes twice must fail at the SDK level (note store
     // removes them after the first transfer).
     let mut alice = Wallet::from_seed(7);

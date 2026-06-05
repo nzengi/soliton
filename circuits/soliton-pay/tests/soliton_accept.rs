@@ -1,7 +1,7 @@
-//! Host acceptance test: prove a REAL SOLITON-Pay proof with the Keccak-BE
+//! Host acceptance test: prove a SOLITON-Pay proof with the Keccak-BE
 //! transcript, then verify it through the SOUND (non-halo2) generic verifier in
-//! `halo2_solana_verifier`. Asserts the single pairing check returns TRUE for a
-//! real proof and that a tampered proof / public input is REJECTED.
+//! `halo2_solana_verifier`. Asserts the single pairing check returns TRUE for an
+//! honest proof and that a tampered proof / public input is REJECTED.
 
 use halo2_solana_verifier::curve::{G1, G2};
 use halo2_solana_verifier::kzg::KzgVk;
@@ -31,12 +31,12 @@ fn build_kzg_vk(art: &soliton_pay::prover::KeccakArtifacts) -> KzgVk {
 }
 
 #[test]
-fn real_proof_accepts_and_tampered_rejects() {
+fn proof_accepts_and_tampered_rejects() {
     let art = prove_keccak(K, DEPTH, SEED).expect("prove_keccak failed");
     let kzg_vk = build_kzg_vk(&art);
     let pubs: Vec<[u8; 32]> = art.public_inputs.iter().map(fr_to_be).collect();
 
-    // --- POSITIVE: real proof must yield pairing == TRUE ---
+    // --- POSITIVE: the proof must yield pairing == TRUE ---
     let ok = halo2_solana_verifier::verify_generic(
         &art.vk_bytes,
         &art.proof_bytes,
@@ -44,9 +44,9 @@ fn real_proof_accepts_and_tampered_rejects() {
         &kzg_vk,
     );
     println!("positive verify_generic result: {ok:?}");
-    let accepted = ok.expect("verifier returned Err on a real proof");
-    assert!(accepted, "REAL proof did NOT pass pairing check (pairing==false)");
-    println!("OK: real SOLITON-Pay proof ACCEPTED (pairing == TRUE)");
+    let accepted = ok.expect("verifier returned Err on the proof");
+    assert!(accepted, "proof did NOT pass pairing check (pairing==false)");
+    println!("OK: SOLITON-Pay proof ACCEPTED (pairing == TRUE)");
 
     // --- NEGATIVE 1: flip one byte of the proof ---
     let mut bad_proof = art.proof_bytes.clone();
@@ -92,7 +92,7 @@ fn second_seed_and_depth_also_accepts() {
         &pubs,
         &kzg_vk,
     )
-    .expect("verifier Err on seed2 real proof");
-    assert!(ok, "seed2 real proof failed pairing");
-    println!("OK: second seed/depth real proof ACCEPTED (pairing == TRUE)");
+    .expect("verifier Err on seed2 proof");
+    assert!(ok, "seed2 proof failed pairing");
+    println!("OK: second seed/depth proof ACCEPTED (pairing == TRUE)");
 }

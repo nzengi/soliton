@@ -7,7 +7,7 @@
 //! arbitrary leaf's authentication path), the wallet stores ALL inserted leaves
 //! so it can build Merkle paths for the notes it owns. The root it computes is
 //! byte-identical to the pool's `PoolState.root` after the same inserts — proven
-//! in the GATE 4 integration test.
+//! in the `mollusk` integration test.
 
 use ark_bn254::Fr;
 use soliton_poseidon as sp;

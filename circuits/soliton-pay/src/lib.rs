@@ -1,4 +1,4 @@
-//! SOLITON-Pay: a real, sound 2-input / 2-output single-asset shielded payment
+//! SOLITON-Pay: a sound 2-input / 2-output single-asset shielded payment
 //! circuit on PSE-halo2 (BN254, KZG/SHPLONK), stage B1 (off-chain prover).
 //!
 //! Note model:

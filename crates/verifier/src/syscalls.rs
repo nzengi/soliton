@@ -5,7 +5,7 @@
 //! Source of truth: agave `program-runtime/src/execution_budget.rs` (May 2026).
 //!
 //! The upstream `solana_bn254::prelude::*` functions already handle the
-//! `target_os = "solana"` switch internally — on BPF they call the actual
+//! `target_os = "solana"` switch internally — on BPF they call the
 //! `sol_alt_bn128_group_op` syscall, on host they fall back to arkworks
 //! emulation. We therefore have ONE code path per primitive.
 //!

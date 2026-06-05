@@ -1,10 +1,10 @@
 //! SOUND on-chain acceptance + CU measurement, on the real SBF VM via Mollusk.
 //!
-//! Builds a REAL SOLITON-Pay proof (`soliton_pay::prover::prove_keccak`), stages
+//! Builds a SOLITON-Pay proof (`soliton_pay::prover::prove_keccak`), stages
 //! the proof+VK+SRS blob into a program-owned account, invokes the BPF program's
 //! TAG_VERIFY path (which calls the host-verified `verify_generic`), and:
 //!   * measures the TRUE compute-unit cost (CU limit raised to 1e9),
-//!   * asserts the program returns SUCCESS for the real proof (== pairing TRUE),
+//!   * asserts the program returns SUCCESS for the proof (== pairing TRUE),
 //!   * asserts FAILURE for a 1-byte-tampered proof (negative control).
 //!
 //! Build + run:
@@ -95,25 +95,25 @@ fn cu_accept() {
 
     eprintln!();
     eprintln!("SOUND SOLITON-Pay on-chain verifier — Mollusk (real SBF, BN254).");
-    eprintln!("real proof: k={K} depth={DEPTH} | blob = {} bytes", blob.len());
+    eprintln!("proof: k={K} depth={DEPTH} | blob = {} bytes", blob.len());
     eprintln!("  vk_v2={} proof={} n_pi={}", art.vk_bytes.len(), art.proof_bytes.len(), art.public_inputs.len());
     eprintln!();
 
-    // ---- POSITIVE: real proof must be ACCEPTED (success == pairing TRUE) ----
+    // ---- POSITIVE: the proof must be ACCEPTED (success == pairing TRUE) ----
     let (pos_result, pos_cu, pos_logs) = run(&blob);
 
     print_stage_breakdown(&pos_logs, pos_cu);
     eprintln!();
-    eprintln!("TOTAL CU consumed (real proof): {pos_cu}");
+    eprintln!("TOTAL CU consumed (proof): {pos_cu}");
     eprintln!("under 1,400,000 limit: {}", pos_cu <= 1_400_000);
     eprintln!("program result (positive): {pos_result:?}");
     eprintln!();
 
     assert!(
         matches!(pos_result, ProgramResult::Success),
-        "REAL proof was NOT accepted on BPF (verify_generic did not return Ok(true)). result={pos_result:?}"
+        "proof was NOT accepted on BPF (verify_generic did not return Ok(true)). result={pos_result:?}"
     );
-    eprintln!("OK: real SOLITON-Pay proof ACCEPTED on BPF (pairing == TRUE).");
+    eprintln!("OK: SOLITON-Pay proof ACCEPTED on BPF (pairing == TRUE).");
 
     // ---- NEGATIVE: flip one proof byte → must FAIL ----
     let mut bad = build_blob(&art);
@@ -134,9 +134,9 @@ fn cu_accept() {
 
     eprintln!();
     eprintln!("================ MOLLUSK ACCEPT/CU REPORT ================");
-    eprintln!("real proof BPF CU       : {pos_cu}");
+    eprintln!("proof BPF CU            : {pos_cu}");
     eprintln!("under 1.4M              : {}", pos_cu <= 1_400_000);
-    eprintln!("real proof ACCEPTED     : {}", matches!(pos_result, ProgramResult::Success));
+    eprintln!("proof ACCEPTED          : {}", matches!(pos_result, ProgramResult::Success));
     eprintln!("tampered REJECTED       : {}", !matches!(neg_result, ProgramResult::Success));
     eprintln!("structural-harness CU   : 926030");
     eprintln!("delta vs structural     : {:+} ({:+.1}%)",

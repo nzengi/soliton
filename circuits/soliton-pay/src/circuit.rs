@@ -10,7 +10,7 @@
 //!  2. Per output j in {1,2}: cmout_j = H3(value_j, pk_j, rho_j) == public cmout_j.
 //!  3. Balance: value_in1 + value_in2 + pub_amount == value_out1 + value_out2.
 //!  4. Range: each output value is 64-bit, via an 8-limb x 8-bit lookup against a
-//!     fixed 0..256 table (real halo2 lookup argument) + weighted recomposition.
+//!     fixed 0..256 table (halo2 lookup argument) + weighted recomposition.
 
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
@@ -85,12 +85,12 @@ pub struct SolitonCircuit {
     pub inputs: [Note; 2],
     pub paths: [MerklePath; 2],
     pub outputs: [Note; 2],
-    /// Public key the output note pays TO. For a real private transfer the
+    /// Public key the output note pays TO. For a private transfer the
     /// sender does NOT know the recipient's spending key `sk`, only their
     /// published `pk_owner = H2(sk,0)`. So the output commitment is bound to
     /// `out_pk[j]` directly (the circuit witnesses `pk_owner` rather than
     /// deriving it from a secret `sk`). When `None`, fall back to
-    /// `outputs[j].pk()` (legacy synthetic witnesses where the builder owns
+    /// `outputs[j].pk()` (the case where the builder owns
     /// both keys). `cmout_j = H3(value_j, out_pk[j], rho_j)`.
     pub out_pk: [Option<Fr>; 2],
     /// pub_amount as a signed value. Encoded into the instance as a field
@@ -327,10 +327,10 @@ impl Circuit<Fr> for SolitonCircuit {
             let (sk_cell, rho_cell, value_cell, zero_cell, cap_cell) =
                 assign_note_scalars(&config, &mut layouter, note)?;
 
-            // pk_owner the output pays to. For a real transfer the sender only
+            // pk_owner the output pays to. For a transfer the sender only
             // knows the recipient's published pk_owner, NOT their sk, so we
-            // witness pk_owner directly. Legacy synthetic witnesses (out_pk
-            // None) derive it from the builder-owned sk via H2(sk,0).
+            // witness pk_owner directly. The builder-owns-both-keys case (out_pk
+            // None) derives it from the builder-owned sk via H2(sk,0).
             let pk_cell = match self.out_pk[j] {
                 Some(pk) => assign_scalar(&config, &mut layouter,
                                           &format!("out_pk_{j}"), Value::known(pk))?,
@@ -344,10 +344,10 @@ impl Circuit<Fr> for SolitonCircuit {
                                    value_cell.clone(), pk_cell, rho_cell)?;
             layouter.constrain_instance(cmout_cell.cell(), config.instance, 3 + j)?;
 
-            // Honest path: range-check the real output value. Negative-test hook:
+            // Honest path: range-check the output value. Negative-test hook:
             // if range_break == Some(j), assign a fresh value cell holding 2^64
             // (a non-64-bit element) and range-check THAT — the limb recomposition
-            // (built from the real u64) cannot equal it, so the range gate fails.
+            // (built from the u64) cannot equal it, so the range gate fails.
             if self.range_break == Some(j) {
                 let bad = assign_scalar(&config, &mut layouter, &format!("bad_val_{j}"),
                                         Value::known(two_pow_64()))?;

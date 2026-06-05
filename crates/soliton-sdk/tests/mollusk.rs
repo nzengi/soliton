@@ -1,6 +1,6 @@
-//! GATE 4: Mollusk pool integration.
+//! Mollusk pool integration.
 //!
-//! The SDK builds a real shield then a real transfer; we submit them to the
+//! The SDK builds a shield then a transfer; we submit them to the
 //! `soliton-pool` program on the real SBF VM (Mollusk) and assert:
 //!   (a) the pool ACCEPTS the SDK-built shields (insert) and transfer (verify +
 //!       nullify + queue),
@@ -90,7 +90,7 @@ fn pool_root(data: &[u8]) -> [u8; 32] {
 }
 
 #[test]
-fn gate4_sdk_shield_transfer_pool_compatible() {
+fn sdk_shield_transfer_pool_compatible() {
     let program_id = Pubkey::new_unique();
     let mollusk = new_mollusk(&program_id);
 
@@ -147,7 +147,7 @@ fn gate4_sdk_shield_transfer_pool_compatible() {
     alice.scan(&ledger_cms, &ledger_cts);
     assert_eq!(alice.balance(), 150);
 
-    // GATE 4a: after the 2 shields, SDK root == pool root.
+    // After the 2 shields, SDK root == pool root.
     assert_eq!(
         pool_root(&pool_data),
         fr_to_le_be(&alice.root()),
@@ -222,13 +222,13 @@ fn gate4_sdk_shield_transfer_pool_compatible() {
     let new_cts: Vec<(Fr, Vec<u8>)> = bundle.encrypted_outputs.clone();
     alice.scan(&new_cms, &new_cts);
 
-    // GATE 4 (load-bearing): SDK local root == on-chain pool root, byte-for-byte.
+    // Load-bearing: SDK local root == on-chain pool root, byte-for-byte.
     let pool_r = pool_root(&pool_data);
     let sdk_r = fr_to_le_be(&alice.root());
     println!("pool root : {}", hex32(&pool_r));
     println!("sdk  root : {}", hex32(&sdk_r));
     assert_eq!(pool_r, sdk_r, "[FAIL] SDK root != on-chain pool root after flush");
-    println!("[PASS] GATE 4: SDK local root == on-chain pool root (BYTE-EQUAL)");
+    println!("[PASS] SDK local root == on-chain pool root (BYTE-EQUAL)");
 }
 
 fn hex32(b: &[u8; 32]) -> String {

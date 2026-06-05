@@ -1,4 +1,4 @@
-//! GATE 2: note-encryption round-trip.
+//! Note-encryption round-trip.
 //! Bob decrypts Alice's ciphertext and recovers the EXACT note; a third party
 //! (wrong key) gets None.
 
@@ -7,7 +7,7 @@ use soliton_sdk::encryption::{encrypt_note, try_decrypt, EncKeypair};
 use soliton_sdk::note::NotePlaintext;
 
 #[test]
-fn gate2_roundtrip_and_wrongkey() {
+fn roundtrip_and_wrongkey() {
     let bob = EncKeypair::from_seed([0xB0u8; 32]);
     let eve = EncKeypair::from_seed([0xEEu8; 32]);
 

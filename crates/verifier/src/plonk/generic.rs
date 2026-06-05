@@ -1052,7 +1052,7 @@ fn verify_inner(
 
     // ω⁻¹ = ω^(n−1) since ωⁿ = 1 — computed ONCE by exponentiation, NOT by a
     // field inversion. Threaded into instance-eval + query rotation so neither
-    // takes an `.inverse()` call (all real inverses are batched).
+    // takes an `.inverse()` call (all field inverses are batched).
     let omega_inv = pow_u64(vk.omega, (1u64 << vk.k) - 1);
 
     let (proof, ch, instance_values) =

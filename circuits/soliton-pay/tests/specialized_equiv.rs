@@ -1,6 +1,6 @@
 //! ORACLE-EQUIVALENCE soundness test for the SPECIALIZED SOLITON-Pay verifier.
 //!
-//! For ≥8 distinct (seed, depth) real proofs we run BOTH the ground-truth
+//! For ≥8 distinct (seed, depth) proofs we run BOTH the ground-truth
 //! `verify_generic` (AST oracle) and the `verify_specialized` straight-line fast
 //! path and assert:
 //!   1. they return the IDENTICAL accept/reject bool, and
@@ -9,7 +9,7 @@
 //!
 //! Any divergence is a hard FAIL — this is the soundness guarantee that the
 //! specialization did not change the verified relation. We also re-confirm
-//! accept-on-real / reject-on-tampered for the specialized path.
+//! accept-on-honest / reject-on-tampered for the specialized path.
 
 use halo2_solana_verifier::curve::{G1, G2};
 use halo2_solana_verifier::kzg::KzgVk;
@@ -61,7 +61,7 @@ fn specialized_is_oracle_equivalent() {
             &art.proof_bytes,
             &pubs,
         )
-        .expect("expected_h_evals_for_test Err on real proof");
+        .expect("expected_h_evals_for_test Err on proof");
         assert_eq!(
             gen_h, spec_h,
             "DIVERGENCE: expected_h_eval mismatch (seed={seed:?}, depth={depth})\n  generic    = {}\n  specialized= {}",

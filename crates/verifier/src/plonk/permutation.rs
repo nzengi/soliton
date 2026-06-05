@@ -82,7 +82,7 @@ pub fn expressions(
     }
 
     // (4) Per-chunk grand-product step.
-    // The actual algebra runs in a separate `chunk_grand_product` function so
+    // The algebra runs in a separate `chunk_grand_product` function so
     // each chunk gets its own (small) BPF stack frame. Inlining everything
     // into `expressions` produces a 7+KB frame that overflows the 4096-byte
     // SBF stack budget.

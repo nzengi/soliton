@@ -1,8 +1,8 @@
 //! Build satisfying (and deliberately unsatisfying) SOLITON-Pay witnesses.
 //!
-//! We construct two real input notes, place their commitments at chosen leaf
+//! We construct two input notes, place their commitments at chosen leaf
 //! indices in a depth-D Merkle tree (all other leaves are a fixed empty-leaf
-//! constant), compute the real root with the SAME native Poseidon used in
+//! constant), compute the root with the SAME native Poseidon used in
 //! circuit, derive authentication paths, pick balancing output notes, and set
 //! the public inputs.
 
@@ -108,9 +108,9 @@ pub fn build_satisfying(depth: usize, seed: [u8; 32]) -> SolitonCircuit {
     }
 }
 
-// ---- REAL-witness constructor (Stage 2 bridge) -------------------------------
+// ---- witness constructor (Stage 2 bridge) ------------------------------------
 
-/// A real input note the spender owns: its spending key, value, randomness, and
+/// An input note the spender owns: its spending key, value, randomness, and
 /// its authenticated position in the on-chain Merkle tree.
 #[derive(Clone, Debug)]
 pub struct InputNote {
@@ -125,7 +125,7 @@ pub struct InputNote {
     pub path_bits: Vec<bool>,
 }
 
-/// A real output note: paid to `pk_owner` (recipient's published key — the
+/// An output note: paid to `pk_owner` (recipient's published key — the
 /// builder need NOT know the recipient's sk), of `value`, blinded by `rho`.
 #[derive(Clone, Debug)]
 pub struct OutputNote {
@@ -146,7 +146,7 @@ pub fn merkle_root_from_path(leaf: Fr, siblings: &[Fr], bits: &[bool]) -> Fr {
     cur
 }
 
-/// Build a `SolitonCircuit` + its 6 public inputs from REAL transfer data.
+/// Build a `SolitonCircuit` + its 6 public inputs from transfer data.
 ///
 /// - input note pk derived in-circuit from `sk` (spender proves knowledge),
 /// - output commitments bound to the recipient's published `pk_owner`,

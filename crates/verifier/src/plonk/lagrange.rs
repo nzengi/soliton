@@ -258,7 +258,7 @@ mod tests {
         // Actually we can use ANY 4th root of unity (not just primitive) for
         // the formula's *consistency* — we just need ω⁴ = 1.
         // Square root of -1 in BN254 Fr: let's use Fr::TWO_INV trick? Easier:
-        // use Fr's actual primitive 4th root via repeated squaring.
+        // use Fr's primitive 4th root via repeated squaring.
         //
         // Skip exact value test — instead verify l_0 + l_blind + l_last + (n-2-blinding) other Lᵢ = 1.
         // Since we don't compute the others, just check structural consistency.

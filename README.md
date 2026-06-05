@@ -4,7 +4,7 @@ Native-PLONK shielded payments verified on Solana — no Groth16 wrap.
 
 ## Status
 
-Devnet-proven verifier, plus a working shielded pool and wallet/SDK. A real
+Devnet-proven verifier, plus a working shielded pool and wallet/SDK. A
 SOLITON-Pay proof verifies on-chain inside Solana's 1.4M compute-unit
 per-transaction ceiling, and the application layer around it — an on-chain
 pool program and an off-chain wallet — now runs end-to-end on Mollusk: an
@@ -45,8 +45,8 @@ Around the verifier there are now two more pieces:
   the tree in the same transaction — hence the queue/flush split.
 - **A wallet/SDK** (`crates/soliton-sdk`) that holds a spending key and an
   X25519 encryption keypair, encrypts and scans output notes, tracks a local
-  copy of the Merkle tree, and builds real shield/transfer/unshield bundles
-  (real witnesses and real proofs the pool accepts).
+  copy of the Merkle tree, and builds shield/transfer/unshield bundles
+  (witnesses and proofs the pool accepts).
 
 What is hidden: the spent notes, their values, the sender/recipient link inside
 the pool, and which leaves were spent. What is public: the deposit and
@@ -65,7 +65,7 @@ This is a devnet proof-of-concept. It is NOT safe for real value:
 - **No audit.** The circuit, verifier, and pool have not been audited.
 - **Single-asset.** Only one asset type (SOL) is supported.
 - **Fixed 2-in / 2-out, no dummy-input padding yet.** A transfer spends exactly
-  two real input notes; there is no dummy/zero input to pad a 1-input spend, and
+  two input notes; there is no dummy/zero input to pad a 1-input spend, and
   no N-in / M-out generalization. Until padding lands, the wallet needs two
   spendable notes to transfer.
 
@@ -78,7 +78,7 @@ The protocol:
 | `crates/verifier` (`halo2-solana-verifier`) | no_std BN254/KZG/SHPLONK verifier; `verify_generic` (AST-driven) and `verify_specialized` (straight-line) |
 | `crates/vk-host` | host-side compiler: halo2 verifying key → flat on-chain VK bytes (`compile_vk_generic`) |
 | `crates/soliton-poseidon` | shared circom-BN254 Poseidon — one source of truth for the hash, used by circuit, tree, and pool; bit-identical to `sol_poseidon` / `light-poseidon` |
-| `crates/soliton-sdk` | wallet/SDK: key management, note encryption (X25519 + XSalsa20Poly1305), scanning, local tree, `build_shield`/`build_transfer`/`build_unshield` (real witnesses + proofs) |
+| `crates/soliton-sdk` | wallet/SDK: key management, note encryption (X25519 + XSalsa20Poly1305), scanning, local tree, `build_shield`/`build_transfer`/`build_unshield` (witnesses + proofs) |
 | `circuits/soliton-pay` | SOLITON-Pay circuit + prover (`prove_keccak`, `prove_transfer`, `build_transfer_circuit`) |
 | `programs/soliton-verifier` | on-chain BPF program running the sound verifier |
 | `programs/soliton-pool` | on-chain shielded pool: incremental tree (`sol_poseidon`), root history, nullifier PDAs, SOL vault, queue/flush |
@@ -103,7 +103,7 @@ cargo build --workspace
 # Specialized path is bit-identical to the generic oracle.
 cargo test -p soliton-pay --test specialized_equiv -- --nocapture
 
-# Real proof accepts; tampered proof rejects.
+# Proof accepts; tampered proof rejects.
 cargo test -p soliton-pay --test soliton_accept -- --nocapture
 
 # Verifier crate unit tests.
@@ -114,7 +114,7 @@ cargo build-sbf --manifest-path programs/soliton-verifier/Cargo.toml -- --featur
 SBF_OUT_DIR=$(pwd)/target/deploy RUST_LOG=off \
   cargo test -p soliton-verifier --test cu_accept -- --nocapture
 
-# Deploy to devnet and accept a real proof on-chain (reports the on-chain CU).
+# Deploy to devnet and accept a proof on-chain (reports the on-chain CU).
 solana program deploy target/deploy/soliton_verifier.so --output json
 cargo run -p soliton-cli -- <programId>
 ```

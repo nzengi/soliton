@@ -1,4 +1,4 @@
-//! Note encryption (Stage 2, GATE 2).
+//! Note encryption (Stage 2).
 //!
 //! Each wallet holds an X25519 encryption keypair, SEPARATE from its spending
 //! key `sk`. A sender encrypts an output note to the recipient's published

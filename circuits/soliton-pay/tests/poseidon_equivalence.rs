@@ -97,7 +97,7 @@ fn h2_h3_match() {
 
 #[test]
 fn note_commitment_and_nullifier_match() {
-    // Build a real note commitment + nullifier both ways and compare bytes.
+    // Build a note commitment + nullifier both ways and compare bytes.
     let value = 1_000_000u64;
     let sk = 424242u64;
     let rho = 777u64;
@@ -130,7 +130,7 @@ fn empty_subtree_and_merkle_node_match() {
         assert_eq!(h_le(&c), a_le(&s), "empty subtree root mismatch at level {level}");
     }
 
-    // A real 2-leaf parent node H2(cmA, cmB).
+    // A 2-leaf parent node H2(cmA, cmB).
     let cm_a = circ::hash3_native(hfr(100), circ::hash2_native(hfr(7), HFr::from(0u64)), hfr(9));
     let cm_b = circ::hash3_native(hfr(50), circ::hash2_native(hfr(8), HFr::from(0u64)), hfr(11));
     let c_node = circ::hash2_native(cm_a, cm_b);
@@ -142,9 +142,9 @@ fn empty_subtree_and_merkle_node_match() {
     eprintln!("OK: empty-subtree chain (depth 32) + Merkle parent byte-identical");
 }
 
-// ---- GATE B: the IN-CIRCUIT chip computes the circom hash --------------------
+// ---- the IN-CIRCUIT chip computes the circom hash ----------------------------
 
-/// Minimal circuit that runs the real `PoseidonChip` on inputs [0, a, b] and
+/// Minimal circuit that runs the `PoseidonChip` on inputs [0, a, b] and
 /// exposes lane 0 of the permutation output as a public instance. If MockProver
 /// is satisfied for a given instance, the chip's in-circuit hash EQUALS that
 /// instance value. We feed the light-poseidon value as the instance, so a
@@ -236,8 +236,8 @@ fn in_circuit_chip_equals_light_poseidon() {
         let bad = MockProver::run(7, &circuit, vec![vec![wrong]]).unwrap();
         assert!(bad.verify().is_err(), "tampered instance unexpectedly accepted");
 
-        // Also confirm the shared crate agrees with light-poseidon (already in
-        // the crate's own Gate A, re-checked here for the report).
+        // Also confirm the shared crate agrees with light-poseidon (already
+        // checked in the crate's own tests, re-checked here for the report).
         assert_eq!(a_le(&shared::hash2(afr(a), afr(b))), a_le(&want_ark));
     }
     eprintln!("OK: IN-CIRCUIT PoseidonChip == light-poseidon == shared (byte-identical)");

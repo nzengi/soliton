@@ -3,7 +3,7 @@
 //! A `Wallet` holds a spending key `sk` (→ `pk_owner = H2(sk,0)`), an X25519
 //! encryption keypair, a store of unspent notes, and a LOCAL incremental Merkle
 //! tree it keeps in sync by scanning on-chain commitments + ciphertexts. From
-//! these it builds real shield / transfer / unshield bundles whose proofs the
+//! these it builds shield / transfer / unshield bundles whose proofs the
 //! pool's verifier accepts and whose output notes the recipient can decrypt.
 //!
 //! Field domain: the SDK works in `ark_bn254::Fr` (the SHARED-poseidon domain,
@@ -253,7 +253,7 @@ impl Wallet {
     /// Build a transfer paying `to` `amount`, with `fee` (pub_amount = -fee). The
     /// remainder of the spent inputs becomes a change note back to self.
     ///
-    /// Requires exactly two REAL spendable input notes whose commitments are
+    /// Requires exactly two spendable input notes whose commitments are
     /// already in the local tree (call `scan` first). Returns the proof bundle +
     /// encrypted outputs.
     pub fn build_transfer(
@@ -277,7 +277,7 @@ impl Wallet {
         let root = self.tree.root();
         let depth = self.tree.depth();
 
-        // Build circuit input notes with real Merkle paths from the local tree.
+        // Build circuit input notes with Merkle paths from the local tree.
         let mut cinputs: Vec<CInputNote> = Vec::with_capacity(2);
         for n in &inputs {
             let (siblings, bits) = self.tree.path(n.leaf_index);

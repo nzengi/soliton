@@ -1,8 +1,8 @@
-//! End-to-end SOLITON-Pay tests: MockProver (satisfiability), real SHPLONK
+//! End-to-end SOLITON-Pay tests: MockProver (satisfiability), SHPLONK
 //! prove+verify, and a negative MockProver (constraints bind).
 //!
-//! "I don't trust tests": every PASS line below is backed by a real
-//! `MockProver::verify()` Ok / Err or a real `verify_proof` Ok.
+//! "I don't trust tests": every PASS line below is backed by a
+//! `MockProver::verify()` Ok / Err or a `verify_proof` Ok.
 
 use halo2_proofs::dev::MockProver;
 use halo2curves::bn256::Fr;
@@ -60,9 +60,9 @@ fn run_for_depth(depth: usize) {
         Err(e) => panic!("  [FAIL] MockProver rejected satisfying witness: {e:?}"),
     }
 
-    // 2. Real SHPLONK prove + verify MUST be Ok.
+    // 2. SHPLONK prove + verify MUST be Ok.
     let art = prove_and_verify(k, depth, seed).expect("prove_and_verify");
-    println!("  [PASS] real verify_proof() Ok (SHPLONK/Blake2b)");
+    println!("  [PASS] verify_proof() Ok (SHPLONK/Blake2b)");
     println!("  proof bytes    : {}", art.proof_len);
     println!("  {}", art.vk_note);
     match &art.vk_bytes {

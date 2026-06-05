@@ -1,10 +1,10 @@
-//! GATE 1: a REAL-witness transfer (built from real input/output notes, not a
-//! seed) is satisfied by MockProver AND its Keccak-BE proof is ACCEPTED by the
-//! sound `verify_specialized`. A bad real witness (unbalanced / wrong nullifier)
-//! is REJECTED by MockProver.
+//! A witness transfer (built from input/output notes, not a seed) is satisfied
+//! by MockProver AND its Keccak-BE proof is ACCEPTED by the sound
+//! `verify_specialized`. A bad witness (unbalanced / wrong nullifier) is
+//! REJECTED by MockProver.
 //!
-//! "I don't trust tests": every PASS is backed by a real MockProver::verify()
-//! Ok/Err or a real verify_specialized() Ok(true)/Ok(false).
+//! "I don't trust tests": every PASS is backed by a MockProver::verify() Ok/Err
+//! or a verify_specialized() Ok(true)/Ok(false).
 
 use halo2_proofs::dev::MockProver;
 use halo2curves::bn256::Fr;
@@ -48,7 +48,7 @@ fn ark_to_h2(a: ark_bn254::Fr) -> Fr {
     Fr::from_repr(repr).unwrap()
 }
 
-/// Build two real input notes sitting at leaves 0 and 1 of a depth-D tree whose
+/// Build two input notes sitting at leaves 0 and 1 of a depth-D tree whose
 /// other leaves are empty, using the SHARED poseidon (ark) to compute cm/root —
 /// exactly what the SDK / on-chain pool would produce — then a halo2-Fr path.
 fn make_inputs() -> ([InputNote; 2], Fr) {
@@ -102,7 +102,7 @@ fn make_inputs() -> ([InputNote; 2], Fr) {
 }
 
 #[test]
-fn gate1_real_transfer_verifies() {
+fn transfer_proof_verifies() {
     let (inputs, root) = make_inputs();
 
     // Recipient (Bob) is known only by his published pk_owner = H2(sk_bob, 0).
@@ -128,8 +128,8 @@ fn gate1_real_transfer_verifies() {
     // MockProver MUST be satisfied.
     let mock = MockProver::run(K, &circuit, vec![instance.clone()]).expect("mock run");
     match mock.verify() {
-        Ok(()) => println!("[PASS] MockProver Ok (real satisfying transfer witness)"),
-        Err(e) => panic!("[FAIL] MockProver rejected real witness: {e:?}"),
+        Ok(()) => println!("[PASS] MockProver Ok (satisfying transfer witness)"),
+        Err(e) => panic!("[FAIL] MockProver rejected witness: {e:?}"),
     }
 
     // Prove + sound-verify.
@@ -140,9 +140,9 @@ fn gate1_real_transfer_verifies() {
     let pubs: Vec<[u8; 32]> = art.public_inputs.iter().map(fr_to_be).collect();
 
     let ok = halo2_solana_verifier::verify_specialized(&art.vk_bytes, &art.proof_bytes, &pubs, &kzg_vk)
-        .expect("verify_specialized Err on real proof");
-    assert!(ok, "[FAIL] real transfer proof did NOT pass pairing");
-    println!("[PASS] verify_specialized ACCEPTED real transfer proof (pairing == TRUE)");
+        .expect("verify_specialized Err on proof");
+    assert!(ok, "[FAIL] transfer proof did NOT pass pairing");
+    println!("[PASS] verify_specialized ACCEPTED transfer proof (pairing == TRUE)");
 
     // Tamper a public input -> must reject.
     let mut bad = pubs.clone();
@@ -153,7 +153,7 @@ fn gate1_real_transfer_verifies() {
 }
 
 #[test]
-fn gate1_bad_real_witness_rejected() {
+fn bad_witness_rejected() {
     let (inputs, root) = make_inputs();
     let pk_bob = ark_to_h2(sp::note_pk(ark_bn254::Fr::from(99999u64)));
     let pk_alice = ark_to_h2(sp::note_pk(ark_bn254::Fr::from(11111u64)));
@@ -166,8 +166,8 @@ fn gate1_bad_real_witness_rejected() {
     let (circuit, instance) =
         build_transfer_circuit(inputs.clone(), outputs, -10i128, root, DEPTH);
     let mock = MockProver::run(K, &circuit, vec![instance]).expect("mock run");
-    assert!(mock.verify().is_err(), "[FAIL] unbalanced real witness was ACCEPTED");
-    println!("[PASS] MockProver REJECTED unbalanced real witness");
+    assert!(mock.verify().is_err(), "[FAIL] unbalanced witness was ACCEPTED");
+    println!("[PASS] MockProver REJECTED unbalanced witness");
 
     // WRONG NULLIFIER: keep a balanced circuit but tamper nf1 in the instance.
     let outputs2 = [

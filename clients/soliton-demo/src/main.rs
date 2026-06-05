@@ -450,7 +450,7 @@ fn main() -> Result<()> {
     let mut ledger_cts: Vec<(ark_bn254::Fr, Vec<u8>)> = Vec::new();
 
     // =====================================================================
-    // STEP 4: Alice shields TWO notes (real lamports Alice -> vault).
+    // STEP 4: Alice shields TWO notes (lamports Alice -> vault).
     // =====================================================================
     println!("---- STEP: Alice shields 2 notes ----");
     let mut shield_sigs = Vec::new();
@@ -711,7 +711,7 @@ fn main() -> Result<()> {
     println!("unshield CU : {unshield_cu:?}  (under {CU_LIMIT}: {})", unshield_cu.map(|c| c < CU_LIMIT as u64).unwrap_or(false));
     println!("flush    CU : {flush_cu:?}");
     println!();
-    println!("-- value movement (real lamports) --");
+    println!("-- value movement (lamports) --");
     println!("Alice fee-payer : {:.6} -> {:.6} SOL", sol(alice_sol_before), sol(ctx.balance(&alice_payer.pubkey())?));
     println!("Alice shielded 0.10 SOL into the pool; 0.09 SOL delivered privately to Bob.");
     println!("vault after shields  : {:.6} SOL", sol(vault_after_shields));
