@@ -1,0 +1,35 @@
+[package]
+name        = "soliton-verifier"
+version     = "0.1.0"
+description = "On-chain SOUND SOLITON-Pay verifier — runs the host-verified halo2_solana_verifier::verify_generic on real SBF (Mollusk + devnet), accepting a real SOLITON-Pay proof"
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# `specialized` is ON by default: the program runs the oracle-equivalent
+# straight-line gate/lookup fast path (`verify_specialized`). Disable it
+# (`--no-default-features --features bpf-entrypoint`) to measure the generic
+# AST oracle on the same blob.
+default = ["specialized"]
+# Build with the Pinocchio BPF entrypoint — required by `cargo build-sbf`.
+bpf-entrypoint = []
+# Select the SPECIALIZED (pre-decoded-constant, straight-line) gate/lookup path.
+specialized = []
+# Forward per-phase CU stage markers from the verifier crate (BPF only).
+cu-trace = ["halo2-solana-verifier/cu-trace"]
+
+[dependencies]
+pinocchio             = { workspace = true, features = ["alloc"] }
+halo2-solana-verifier = { path = "../../crates/verifier", default-features = false, features = ["solana-syscalls"] }
+
+[dev-dependencies]
+soliton-pay    = { path = "../../circuits/soliton-pay" }
+halo2curves    = { workspace = true }
+mollusk-svm    = { workspace = true }
+solana-program = { workspace = true }
+solana-account = "3"
+solana-svm-log-collector = "3"

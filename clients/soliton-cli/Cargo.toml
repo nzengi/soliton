@@ -1,0 +1,24 @@
+[package]
+name        = "soliton-cli"
+version     = "0.1.0"
+description = "Devnet client: deploy soliton-verifier, stage the SOLITON-Pay proof blob, verify on-chain, report real CU"
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+
+[[bin]]
+name = "soliton"
+path = "src/main.rs"
+
+[dependencies]
+solana-client                    = "3"
+solana-sdk                       = "3"
+solana-commitment-config         = "3"
+solana-compute-budget-interface  = "3"
+solana-system-interface          = { version = "3", features = ["bincode"] }
+solana-program                   = { workspace = true }
+# REAL SOLITON-Pay prover (prove_keccak). The `cu_accept.rs` blob layout is
+# reproduced verbatim below from this crate's `KeccakArtifacts`.
+soliton-pay                      = { path = "../../circuits/soliton-pay" }
+halo2curves                      = { workspace = true }
+anyhow                           = "1"

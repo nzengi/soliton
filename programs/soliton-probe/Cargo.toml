@@ -1,0 +1,28 @@
+[package]
+name        = "soliton-probe"
+version     = "0.1.0"
+description = "SOLITON load-bearing CU probe: batch vs naive Fr inversion, Fr arithmetic overhead, 2-pair pairing — measured on real SBF via Mollusk"
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+bpf-entrypoint = []
+
+[dependencies]
+pinocchio    = { workspace = true, features = ["alloc"] }
+ark-bn254    = { workspace = true }
+ark-ff       = { workspace = true }
+solana-bn254 = { workspace = true }
+
+[dev-dependencies]
+mollusk-svm    = { workspace = true }
+solana-program = { workspace = true }
+solana-account = "3"
+ark-ff         = { workspace = true, features = ["std"] }
+ark-std        = { workspace = true, features = ["std"] }
+ark-serialize  = { workspace = true, features = ["std"] }
