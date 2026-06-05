@@ -306,8 +306,10 @@ fn transfer_cu_doublespend_unknownroot() {
 
     let pool_key = Pubkey::new_unique();
     let blob_key = Pubkey::new_unique();
-    let (nf1_key, _b1) = nf_pda(&program_id, &nf1_le);
-    let (nf2_key, _b2) = nf_pda(&program_id, &nf2_le);
+    let (nf1_key, nf1_bump) = nf_pda(&program_id, &nf1_le);
+    let (nf2_key, nf2_bump) = nf_pda(&program_id, &nf2_le);
+    let payer_key = Pubkey::new_unique();
+    let (system_key, system_acct) = mollusk_svm::program::keyed_account_for_system_program();
 
     let pool_acct = |data: &Vec<u8>| Account {
         lamports: rent_for(POOL_STATE_LEN),
@@ -317,15 +319,23 @@ fn transfer_cu_doublespend_unknownroot() {
         rent_epoch: 0,
     };
     let blob_acct = Account { lamports: rent_for(blob.len()), data: blob.clone(), owner: program_id, executable: false, rent_epoch: 0 };
-    let nf_acct = || Account { lamports: rent_for(1), data: vec![0u8; 1], owner: program_id, executable: false, rent_epoch: 0 };
+    // Nullifier PDA: on the FIRST spend it does not yet exist (the program
+    // CPI-creates it). Mirror that: a fresh, System-owned, zero-data account.
+    let nf_acct = || Account { lamports: 0, data: vec![], owner: system_key, executable: false, rent_epoch: 0 };
+    // Fee-payer (writable signer) funds the System CreateAccount for each PDA.
+    let payer_acct = || Account { lamports: 10_000_000_000, data: vec![], owner: system_key, executable: false, rent_epoch: 0 };
 
+    // transfer ix: [pool W, blob R, nf1 W, nf2 W, payer W S, system R]
+    // data: [tag, nf1_bump, nf2_bump]
     let metas = vec![
         AccountMeta::new(pool_key, false),
         AccountMeta::new_readonly(blob_key, false),
         AccountMeta::new(nf1_key, false),
         AccountMeta::new(nf2_key, false),
+        AccountMeta::new(payer_key, true),
+        AccountMeta::new_readonly(system_key, false),
     ];
-    let ix = Instruction { program_id, accounts: metas.clone(), data: vec![tag::TRANSFER] };
+    let ix = Instruction { program_id, accounts: metas.clone(), data: vec![tag::TRANSFER, nf1_bump, nf2_bump] };
 
     // ---- POSITIVE transfer ----
     let accts = vec![
@@ -333,6 +343,8 @@ fn transfer_cu_doublespend_unknownroot() {
         (blob_key, blob_acct.clone()),
         (nf1_key, nf_acct()),
         (nf2_key, nf_acct()),
+        (payer_key, payer_acct()),
+        (system_key, system_acct.clone()),
     ];
     let res = mollusk.process_instruction(&ix, &accts);
     eprintln!();
@@ -347,13 +359,15 @@ fn transfer_cu_doublespend_unknownroot() {
     assert_eq!(qlen, 2, "queue should hold 2 outputs after transfer");
     eprintln!("queue_len after transfer : {qlen} (outputs queued, not hashed)");
 
-    // ---- DOUBLE-SPEND: reuse spent nf1 ----
+    // ---- DOUBLE-SPEND: reuse spent nf1 (already a program-owned PDA, data[0]=1) ----
     let spent_nf1 = Account { lamports: rent_for(1), data: vec![1u8; 1], owner: program_id, executable: false, rent_epoch: 0 };
     let accts_ds = vec![
         (pool_key, pool_acct(&pool_data)),
         (blob_key, blob_acct.clone()),
         (nf1_key, spent_nf1),
         (nf2_key, nf_acct()),
+        (payer_key, payer_acct()),
+        (system_key, system_acct.clone()),
     ];
     let res_ds = mollusk.process_instruction(&ix, &accts_ds);
     eprintln!("double-spend result : {:?}", res_ds.program_result);
@@ -367,6 +381,8 @@ fn transfer_cu_doublespend_unknownroot() {
         (blob_key, blob_acct.clone()),
         (nf1_key, nf_acct()),
         (nf2_key, nf_acct()),
+        (payer_key, payer_acct()),
+        (system_key, system_acct.clone()),
     ];
     let res_ur = mollusk.process_instruction(&ix, &accts_ur);
     eprintln!("unknown-root result : {:?}", res_ur.program_result);
@@ -411,18 +427,26 @@ fn unshield_cu() {
     let blob_key = Pubkey::new_unique();
     let vault_key = Pubkey::new_unique();
     let recipient_key = Pubkey::new_unique();
-    let (nf1_key, _) = nf_pda(&program_id, &nf1_le);
-    let (nf2_key, _) = nf_pda(&program_id, &nf2_le);
+    let (nf1_key, nf1_bump) = nf_pda(&program_id, &nf1_le);
+    let (nf2_key, nf2_bump) = nf_pda(&program_id, &nf2_le);
+    let payer_key = Pubkey::new_unique();
+    let (system_key, system_acct) = mollusk_svm::program::keyed_account_for_system_program();
 
     let amount = 50_000_000u64;
+    // First spend: the nullifier PDAs do not exist yet (System-owned, empty);
+    // the program CPI-creates them, funded by `payer`.
     let accts = vec![
         (pool_key, Account { lamports: rent_for(POOL_STATE_LEN), data: pool_data, owner: program_id, executable: false, rent_epoch: 0 }),
         (blob_key, Account { lamports: rent_for(blob.len()), data: blob, owner: program_id, executable: false, rent_epoch: 0 }),
         (vault_key, Account { lamports: 1_000_000_000, data: vec![], owner: program_id, executable: false, rent_epoch: 0 }),
         (recipient_key, Account { lamports: 0, data: vec![], owner: Pubkey::new_from_array([0u8;32]), executable: false, rent_epoch: 0 }),
-        (nf1_key, Account { lamports: rent_for(1), data: vec![0u8;1], owner: program_id, executable: false, rent_epoch: 0 }),
-        (nf2_key, Account { lamports: rent_for(1), data: vec![0u8;1], owner: program_id, executable: false, rent_epoch: 0 }),
+        (nf1_key, Account { lamports: 0, data: vec![], owner: system_key, executable: false, rent_epoch: 0 }),
+        (nf2_key, Account { lamports: 0, data: vec![], owner: system_key, executable: false, rent_epoch: 0 }),
+        (payer_key, Account { lamports: 10_000_000_000, data: vec![], owner: system_key, executable: false, rent_epoch: 0 }),
+        (system_key, system_acct.clone()),
     ];
+    // unshield ix: [pool W, blob R, vault W, recipient W, nf1 W, nf2 W, payer W S, system R]
+    // data: [tag, amount u64 LE, nf1_bump, nf2_bump]
     let ix = Instruction {
         program_id,
         accounts: vec![
@@ -432,10 +456,14 @@ fn unshield_cu() {
             AccountMeta::new(recipient_key, false),
             AccountMeta::new(nf1_key, false),
             AccountMeta::new(nf2_key, false),
+            AccountMeta::new(payer_key, true),
+            AccountMeta::new_readonly(system_key, false),
         ],
         data: {
             let mut d = vec![tag::UNSHIELD];
             d.extend_from_slice(&amount.to_le_bytes());
+            d.push(nf1_bump);
+            d.push(nf2_bump);
             d
         },
     };

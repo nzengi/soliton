@@ -164,20 +164,31 @@ fn sdk_shield_transfer_pool_compatible() {
     assert_eq!(proof_root_le, pool_root(&pool_data), "[FAIL] proof root != pool root");
     println!("[PASS] SDK transfer proof root == pool current root");
 
-    // Submit transfer to the pool. accounts: [pool W, blob R, nf1 W, nf2 W].
+    // Submit transfer to the pool.
+    // accounts: [pool W, blob R, nf1 W, nf2 W, payer W S, system R].
+    // The SDK leaves payer/system/bumps to the caller (proof/VK travel in the
+    // staged blob); we wire them here exactly as the devnet demo does.
     let blob = build_blob(art);
     let blob_key = Pubkey::new_unique();
     let nf1_le = be_to_le(&h_be(&art.public_inputs[1]));
     let nf2_le = be_to_le(&h_be(&art.public_inputs[2]));
-    let (nf1_key, _) = nf_pda(&program_id, &nf1_le);
-    let (nf2_key, _) = nf_pda(&program_id, &nf2_le);
+    let (nf1_key, nf1_bump) = nf_pda(&program_id, &nf1_le);
+    let (nf2_key, nf2_bump) = nf_pda(&program_id, &nf2_le);
 
     let accts = vec![
         (pool_key, Account { lamports: rent_for(POOL_STATE_LEN), data: pool_data.clone(), owner: program_id, executable: false, rent_epoch: 0 }),
         (blob_key, Account { lamports: rent_for(blob.len()), data: blob.clone(), owner: program_id, executable: false, rent_epoch: 0 }),
-        (nf1_key, Account { lamports: rent_for(1), data: vec![0u8; 1], owner: program_id, executable: false, rent_epoch: 0 }),
-        (nf2_key, Account { lamports: rent_for(1), data: vec![0u8; 1], owner: program_id, executable: false, rent_epoch: 0 }),
+        // First spend: PDAs do not exist yet (System-owned, empty); the program
+        // CPI-creates them, funded by `payer`.
+        (nf1_key, Account { lamports: 0, data: vec![], owner: system_key, executable: false, rent_epoch: 0 }),
+        (nf2_key, Account { lamports: 0, data: vec![], owner: system_key, executable: false, rent_epoch: 0 }),
+        (payer_key, Account { lamports: 10_000_000_000, data: vec![], owner: system_key, executable: false, rent_epoch: 0 }),
+        (system_key, system_acct.clone()),
     ];
+    // data: [tag::TRANSFER, nf1_bump, nf2_bump]
+    let mut transfer_data = bundle.ix_data.clone();
+    transfer_data.push(nf1_bump);
+    transfer_data.push(nf2_bump);
     let ix = Instruction {
         program_id,
         accounts: vec![
@@ -185,8 +196,10 @@ fn sdk_shield_transfer_pool_compatible() {
             AccountMeta::new_readonly(blob_key, false),
             AccountMeta::new(nf1_key, false),
             AccountMeta::new(nf2_key, false),
+            AccountMeta::new(payer_key, true),
+            AccountMeta::new_readonly(system_key, false),
         ],
-        data: bundle.ix_data.clone(),
+        data: transfer_data,
     };
     let res = mollusk.process_instruction(&ix, &accts);
     assert!(matches!(res.program_result, ProgramResult::Success), "[FAIL] SDK transfer rejected by pool: {:?}", res.program_result);
