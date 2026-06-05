@@ -1,0 +1,43 @@
+[package]
+name        = "soliton-sdk"
+version     = "0.1.0"
+description = "SOLITON wallet/SDK: note encryption, local Merkle tree, transfer building (Stage 2, host std)"
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+
+[lib]
+name = "soliton_sdk"
+path = "src/lib.rs"
+
+[dependencies]
+# Shared Poseidon (the ONE hash; same as circuit + on-chain pool).
+soliton-poseidon = { path = "../../crates/soliton-poseidon", features = [] }
+
+# Circuit + prover (real-witness transfer + Keccak artifacts).
+soliton-pay = { path = "../../circuits/soliton-pay" }
+
+# Field types.
+ark-bn254 = { workspace = true, features = ["std"] }
+ark-ff    = { workspace = true, features = ["std"] }
+halo2curves = { workspace = true }
+
+# Note encryption: X25519 + XSalsa20Poly1305 (NaCl box).
+crypto_box = { version = "0.9", features = ["std"] }
+rand_core  = "0.6"
+rand       = "0.8"
+
+anyhow = "1"
+
+[dev-dependencies]
+halo2-solana-verifier = { path = "../../crates/verifier", features = ["std", "solana-syscalls"] }
+halo2curves = { workspace = true }
+ark-bn254 = { workspace = true, features = ["std"] }
+ark-ff    = { workspace = true, features = ["std"] }
+
+# Mollusk pool integration (GATE 4).
+mollusk-svm    = { workspace = true }
+solana-account = "3"
+solana-program = { workspace = true }
+soliton-pool   = { path = "../../programs/soliton-pool" }
+soliton-pay    = { path = "../../circuits/soliton-pay" }

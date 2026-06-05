@@ -125,6 +125,24 @@ pub fn prove_keccak(
     prove_keccak_circuit(k, build_satisfying(depth, seed), seed)
 }
 
+/// Prove a REAL transfer (Stage 2). Builds the circuit from real input/output
+/// notes via `witness::build_transfer_circuit` (which asserts the Merkle paths
+/// reproduce `root`), proves it with the Keccak-BE transcript, self-verifies,
+/// and returns the on-chain-verifier artifacts.
+pub fn prove_transfer(
+    k: u32,
+    inputs: [crate::witness::InputNote; 2],
+    outputs: [crate::witness::OutputNote; 2],
+    pub_amount: i128,
+    root: Fr,
+    depth: usize,
+    seed: [u8; 32],
+) -> Result<KeccakArtifacts, anyhow::Error> {
+    let (circuit, _instance) =
+        crate::witness::build_transfer_circuit(inputs, outputs, pub_amount, root, depth);
+    prove_keccak_circuit(k, circuit, seed)
+}
+
 /// Same as `prove_keccak` but with a caller-supplied circuit + explicit instance
 /// vector (so negative tests can prove an UNSATISFIED instance — which halo2
 /// will reject, so callers should only feed satisfiable circuits here and tamper

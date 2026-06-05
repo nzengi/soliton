@@ -4,6 +4,7 @@ members = [
     "crates/verifier",
     "crates/vk-host",
     "crates/soliton-poseidon",
+    "crates/soliton-sdk",
     "circuits/standard-plonk",
     "circuits/soliton-pay",
     "programs/verifier-program",

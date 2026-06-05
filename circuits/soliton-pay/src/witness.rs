@@ -87,7 +87,7 @@ pub fn build_satisfying(depth: usize, seed: [u8; 32]) -> SolitonCircuit {
     // pub_amount and balancing outputs:
     //   vin0 + vin1 + pub_amount == vout0 + vout1
     //   100 + 50 + 30 = 180 = 120 + 60
-    let pub_amount = 30u64;
+    let pub_amount = 30i128;
     let out0 = Note { value: 120, sk: fe(seed, 5), rho: fe(seed, 6) };
     let out1 = Note { value: 60, sk: fe(seed, 7), rho: fe(seed, 8) };
 
@@ -101,10 +101,107 @@ pub fn build_satisfying(depth: usize, seed: [u8; 32]) -> SolitonCircuit {
         inputs: [in0, in1],
         paths: [path0, path1],
         outputs: [out0, out1],
+        out_pk: [None, None],
         pub_amount,
         root,
         range_break: None,
     }
+}
+
+// ---- REAL-witness constructor (Stage 2 bridge) -------------------------------
+
+/// A real input note the spender owns: its spending key, value, randomness, and
+/// its authenticated position in the on-chain Merkle tree.
+#[derive(Clone, Debug)]
+pub struct InputNote {
+    pub sk: Fr,
+    pub value: u64,
+    pub rho: Fr,
+    pub leaf_index: u64,
+    /// Sibling hashes from leaf up to (but not including) the root, length =
+    /// tree depth.
+    pub merkle_path: Vec<Fr>,
+    /// Path bits: false = this node is the LEFT child at that level.
+    pub path_bits: Vec<bool>,
+}
+
+/// A real output note: paid to `pk_owner` (recipient's published key — the
+/// builder need NOT know the recipient's sk), of `value`, blinded by `rho`.
+#[derive(Clone, Debug)]
+pub struct OutputNote {
+    pub value: u64,
+    pub pk_owner: Fr,
+    pub rho: Fr,
+}
+
+/// Recompute a Merkle root from a leaf + authentication path (native Poseidon).
+/// Mirrors the in-circuit `merkle_root` conditional-swap chain so the verified
+/// root is bit-identical to what the circuit computes.
+pub fn merkle_root_from_path(leaf: Fr, siblings: &[Fr], bits: &[bool]) -> Fr {
+    let mut cur = leaf;
+    for (sib, bit) in siblings.iter().zip(bits.iter()) {
+        let (l, r) = if *bit { (*sib, cur) } else { (cur, *sib) };
+        cur = poseidon::hash2_native(l, r);
+    }
+    cur
+}
+
+/// Build a `SolitonCircuit` + its 6 public inputs from REAL transfer data.
+///
+/// - input note pk derived in-circuit from `sk` (spender proves knowledge),
+/// - output commitments bound to the recipient's published `pk_owner`,
+/// - each input's Merkle path is recomputed natively and ASSERTED to equal
+///   `root` (so a wrong path is caught here, before proving),
+/// - `pub_amount` is the signed external delta (shield +, unshield −, here
+///   typically `-fee` for an internal transfer).
+///
+/// Returns the circuit and the public-input vector `[root, nf1, nf2, cmout1,
+/// cmout2, pub_amount]`.
+pub fn build_transfer_circuit(
+    inputs: [InputNote; 2],
+    outputs: [OutputNote; 2],
+    pub_amount: i128,
+    root: Fr,
+    depth: usize,
+) -> (SolitonCircuit, Vec<Fr>) {
+    let in_notes: [Note; 2] = [
+        Note { value: inputs[0].value, sk: inputs[0].sk, rho: inputs[0].rho },
+        Note { value: inputs[1].value, sk: inputs[1].sk, rho: inputs[1].rho },
+    ];
+
+    // Verify each input's path reproduces `root` (catches a stale/local tree).
+    for (i, n) in inputs.iter().enumerate() {
+        assert_eq!(n.merkle_path.len(), depth, "input {i} path len != depth");
+        assert_eq!(n.path_bits.len(), depth, "input {i} bits len != depth");
+        let cm = in_notes[i].cm();
+        let r = merkle_root_from_path(cm, &n.merkle_path, &n.path_bits);
+        assert_eq!(r, root, "input {i} Merkle path does NOT reproduce root");
+    }
+
+    let paths = [
+        MerklePath { siblings: inputs[0].merkle_path.clone(), bits: inputs[0].path_bits.clone() },
+        MerklePath { siblings: inputs[1].merkle_path.clone(), bits: inputs[1].path_bits.clone() },
+    ];
+
+    // Output notes: value+rho in `Note`, pk_owner supplied via out_pk so the
+    // commitment binds to the recipient's published key (sk unknown to sender).
+    let out_notes: [Note; 2] = [
+        Note { value: outputs[0].value, sk: Fr::zero(), rho: outputs[0].rho },
+        Note { value: outputs[1].value, sk: Fr::zero(), rho: outputs[1].rho },
+    ];
+
+    let circuit = SolitonCircuit {
+        depth,
+        inputs: in_notes,
+        paths,
+        outputs: out_notes,
+        out_pk: [Some(outputs[0].pk_owner), Some(outputs[1].pk_owner)],
+        pub_amount,
+        root,
+        range_break: None,
+    };
+    let instance = circuit.instance();
+    (circuit, instance)
 }
 
 /// Build an UNSATISFYING circuit by breaking the value balance (vout too large),

@@ -85,7 +85,19 @@ pub struct SolitonCircuit {
     pub inputs: [Note; 2],
     pub paths: [MerklePath; 2],
     pub outputs: [Note; 2],
-    pub pub_amount: u64,
+    /// Public key the output note pays TO. For a real private transfer the
+    /// sender does NOT know the recipient's spending key `sk`, only their
+    /// published `pk_owner = H2(sk,0)`. So the output commitment is bound to
+    /// `out_pk[j]` directly (the circuit witnesses `pk_owner` rather than
+    /// deriving it from a secret `sk`). When `None`, fall back to
+    /// `outputs[j].pk()` (legacy synthetic witnesses where the builder owns
+    /// both keys). `cmout_j = H3(value_j, out_pk[j], rho_j)`.
+    pub out_pk: [Option<Fr>; 2],
+    /// pub_amount as a signed value. Encoded into the instance as a field
+    /// element: non-negative → Fr::from(v as u64); negative → -Fr::from(|v|).
+    /// The balance gate enforces vin0 + vin1 + pub_amount == vout0 + vout1 over
+    /// the field, which is exactly correct for the signed semantics.
+    pub pub_amount: i128,
     pub root: Fr,
     /// Negative-test hook: if `Some(j)`, output j's value CELL is forced to a
     /// non-64-bit field element (2^64) so the range gate must reject. None in
@@ -93,16 +105,47 @@ pub struct SolitonCircuit {
     pub range_break: Option<usize>,
 }
 
+/// Encode a u128 magnitude into Fr (high*2^64 + low).
+fn fr_from_u128(m: u128) -> Fr {
+    let lo = (m & 0xFFFF_FFFF_FFFF_FFFF) as u64;
+    let hi = (m >> 64) as u64;
+    let two64 = Fr::from(1u64 << 32) * Fr::from(1u64 << 32);
+    Fr::from(hi) * two64 + Fr::from(lo)
+}
+
+/// Encode a signed pub_amount into a field element: v>=0 → v, v<0 → -|v|.
+pub fn pub_amount_fr(v: i128) -> Fr {
+    if v >= 0 {
+        fr_from_u128(v as u128)
+    } else {
+        -fr_from_u128((-v) as u128)
+    }
+}
+
 impl SolitonCircuit {
+    /// pk_owner bound to output j (recipient's published key, or legacy derived).
+    pub fn out_pk_of(&self, j: usize) -> Fr {
+        self.out_pk[j].unwrap_or_else(|| self.outputs[j].pk())
+    }
+
+    /// Output commitment cmout_j = H3(value_j, out_pk_j, rho_j).
+    pub fn out_cm(&self, j: usize) -> Fr {
+        poseidon::hash3_native(
+            Fr::from(self.outputs[j].value),
+            self.out_pk_of(j),
+            self.outputs[j].rho,
+        )
+    }
+
     /// Build the 6-element public instance vector in canonical order.
     pub fn instance(&self) -> Vec<Fr> {
         vec![
             self.root,
             self.inputs[0].nf(),
             self.inputs[1].nf(),
-            self.outputs[0].cm(),
-            self.outputs[1].cm(),
-            Fr::from(self.pub_amount),
+            self.out_cm(0),
+            self.out_cm(1),
+            pub_amount_fr(self.pub_amount),
         ]
     }
 }
@@ -123,6 +166,7 @@ impl SolitonCircuit {
                 MerklePath { siblings: vec![Fr::zero(); depth], bits: vec![false; depth] },
             ],
             outputs: [Note::default(); 2],
+            out_pk: [None, None],
             pub_amount: 0,
             root: Fr::zero(),
             range_break: None,
@@ -283,10 +327,18 @@ impl Circuit<Fr> for SolitonCircuit {
             let (sk_cell, rho_cell, value_cell, zero_cell, cap_cell) =
                 assign_note_scalars(&config, &mut layouter, note)?;
 
-            let pk_cell = chip
-                .permute(layouter.namespace(|| format!("pk_out_{j}")),
-                         [cap_cell, sk_cell, zero_cell])?[0]
-                .clone();
+            // pk_owner the output pays to. For a real transfer the sender only
+            // knows the recipient's published pk_owner, NOT their sk, so we
+            // witness pk_owner directly. Legacy synthetic witnesses (out_pk
+            // None) derive it from the builder-owned sk via H2(sk,0).
+            let pk_cell = match self.out_pk[j] {
+                Some(pk) => assign_scalar(&config, &mut layouter,
+                                          &format!("out_pk_{j}"), Value::known(pk))?,
+                None => chip
+                    .permute(layouter.namespace(|| format!("pk_out_{j}")),
+                             [cap_cell, sk_cell, zero_cell])?[0]
+                    .clone(),
+            };
 
             let cmout_cell = hash3(&chip, &config, &mut layouter, &format!("cm_out_{j}"),
                                    value_cell.clone(), pk_cell, rho_cell)?;
@@ -314,7 +366,7 @@ impl Circuit<Fr> for SolitonCircuit {
         let vin1 = assign_scalar(&config, &mut layouter, "vin1",
                                  Value::known(Fr::from(self.inputs[1].value)))?;
         let pub_amt = assign_scalar(&config, &mut layouter, "pub_amt",
-                                    Value::known(Fr::from(self.pub_amount)))?;
+                                    Value::known(pub_amount_fr(self.pub_amount)))?;
         layouter.constrain_instance(pub_amt.cell(), config.instance, 5)?;
 
         let s1 = add_cells(&config, &mut layouter, "vin0+vin1", &vin0, &vin1)?;
